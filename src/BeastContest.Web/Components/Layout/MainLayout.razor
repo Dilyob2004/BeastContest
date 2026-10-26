@@ -1,0 +1,77 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject UiState Ui
+@inject NavigationManager Navigation
+@inject ICurrentActor Actor
+@inject ContestStore Contests
+<a class="skip-link" href="#main">@Ui["app.skip"]</a>
+<div class="app-shell">
+    @if (_menuOpen) { <button class="sidebar-overlay" aria-label="@Ui["app.close"]" @onclick="() => _menuOpen = false"></button> }
+    <aside class="sidebar @(_menuOpen ? "is-open" : "")">
+        <a class="brand" href="/"><span class="brand-mark"><Icon Name="brand" /></span><span>beast<span class="brand-light">contest</span><small>LOCAL COMPETITION PLATFORM</small></span></a>
+        @if(_ready&&!Blocked){
+        <div class="nav-label">@Ui["nav.workspace"]</div>
+        <nav aria-label="@Ui["nav.workspace"]">
+            <AuthorizeView Roles="Admin"><NavLink href="/admin" Match="NavLinkMatch.All"><Icon Name="grid" /><span>@Ui["admin.dashboard"]</span></NavLink></AuthorizeView>
+            <NavLink href="/problems"><Icon Name="code" /><span>@Ui["nav.problems"]</span></NavLink>
+            <NavLink href="/standings"><Icon Name="trophy" /><span>@Ui["nav.standings"]</span></NavLink>
+            <NavLink href="/chat"><Icon Name="users"/><span>@Ui[_isAdmin ? "chat.adminTitle" : "chat.title"]</span></NavLink>
+        </nav>
+        }
+        <AuthorizeView Roles="Admin"><div class="nav-label management">@Ui["nav.manage"]</div>
+        <nav aria-label="@Ui["nav.manage"]"><NavLink href="/admin/contests/new"><Icon Name="plus" /><span>@Ui["nav.admin"]</span></NavLink><NavLink href="/admin/users"><Icon Name="users" /><span>@Ui["users.title"]</span></NavLink></nav><nav class="settings-nav"><NavLink href="/admin/judge"><Icon Name="server"/><span>@Ui["queue.title"]</span></NavLink></nav>
+        </AuthorizeView>
+    </aside>
+    <div class="main-shell">
+        <header class="topbar"><div class="topbar-left"><button class="icon-button mobile-menu" @onclick="() => _menuOpen = !_menuOpen" aria-label="@Ui["app.menu"]"><Icon Name="menu" /></button><span class="breadcrumb">Workspace <span>/</span> <b>@CurrentPage</b></span></div><div class="topbar-actions"><span class="local-status"><span></span>@Ui["app.local"]</span><span class="topbar-divider"></span><button class="language-button" aria-label="@Ui["app.language"]" @onclick="Ui.ToggleLanguageAsync">@Ui.Language.ToUpperInvariant()<span>⌄</span></button><button class="icon-button" aria-label="@Ui["app.theme"]" @onclick="Ui.ToggleThemeAsync"><Icon Name="@(Ui.Theme == "dark" ? "sun" : "moon")" /></button><div class="account-menu"><AuthorizeView><Authorized Context="profile"><div class="profile topbar-profile"><span class="avatar">BC</span><div><strong>@profile.User.Identity?.Name</strong><small>@Ui[profile.User.IsInRole("Admin") ? "auth.role.Admin" : "auth.role.Participant"]</small></div></div><form method="post" action="/account/logout" data-enhance="false" class="logout-form"><AntiforgeryToken/><button type="submit" class="text-button">@Ui["auth.signOut"]</button></form></Authorized><NotAuthorized><div class="profile topbar-profile"><a class="button primary full" href="/account/login" data-enhance-nav="false">@Ui["auth.signIn"]<Icon Name="arrow"/></a></div></NotAuthorized></AuthorizeView></div></div></header>
+        <main id="main" tabindex="-1">
+        @if(!_ready){<p>@Ui["common.loading"]</p>}
+        else if(Blocked){
+            <PageTitle>@Ui[CurrentContest is null?"enrollment.none":"schedule.waiting"] · BeastContest</PageTitle>
+            <section class="panel participant-wait">
+                <Icon Name="clock"/>
+                <h1>@Ui[_accessError?"common.error":CurrentContest is null?"enrollment.none":"schedule.waiting"]</h1>
+                @if(CurrentContest is {} upcoming){
+                    <h2>@Ui.Text(upcoming.Title)</h2>
+                    @if(upcoming.StartsAt is {} start){<p>@Ui["schedule.countdown"]</p><div class="countdown">@StandingsStore.FormatTime(Math.Max(0,(long)Math.Ceiling((start-DateTimeOffset.UtcNow).TotalSeconds)))</div>}
+                    else{<p>@Ui["schedule.noDate"]</p>}
+                    <p>@Ui["schedule.locked"]</p>
+                }else if(!_accessError){<p>@Ui["enrollment.contact"]</p>}
+                <form method="post" action="/account/logout" data-enhance="false"><AntiforgeryToken/><button class="button secondary" type="submit">@Ui["auth.signOut"]</button></form>
+            </section>
+        }else{<div @key="AccessKey">@Body</div>}
+        </main>
+        <footer class="main-footer"><span>© 2026 BeastContest</span></footer>
+    </div>
+</div>
+<div id="blazor-error-ui" data-nosnippet><span>@Ui["common.errorTitle"]</span> <a href="" class="reload">@Ui["common.retry"]</a><button class="dismiss" aria-label="@Ui["app.close"]">×</button></div>
+@code {
+    private bool _menuOpen,_isAdmin,_ready,_accessError,_pollStarted;
+    private Contest[] _assigned=[];
+    private readonly CancellationTokenSource _stop=new();
+    private Contest? CurrentContest=>ParticipantAccess.Current(_assigned);
+    private bool Blocked=>!_isAdmin&&(_accessError||!ParticipantAccess.Open(CurrentContest));
+    private string AccessKey=>_isAdmin?"admin":CurrentContest?.Id+":"+CurrentContest?.Status;
+    private async Task LoadAccessAsync(){
+        try{_isAdmin=(await Actor.GetAsync()).IsAdmin;_assigned=_isAdmin?[]:await Contests.GetAllAsync();_accessError=false;}
+        catch(Exception ex) when(ex is System.Data.Common.DbException or InvalidOperationException or UnauthorizedAccessException){_assigned=[];_accessError=true;}
+        _ready=true;
+    }
+    private async Task PollAccessAsync(CancellationToken token){
+        using var timer=new PeriodicTimer(TimeSpan.FromSeconds(1));var ticks=0;
+        try{while(await timer.WaitForNextTickAsync(token)){await InvokeAsync(async()=>{if(token.IsCancellationRequested)return;if(++ticks%3==0)await LoadAccessAsync();StateHasChanged();});}}
+        catch(OperationCanceledException) when(token.IsCancellationRequested){}
+    }
+    protected override async Task OnInitializedAsync()=>await LoadAccessAsync();
+    private string CurrentPage => Ui[Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0] switch {
+        "admin/judge" => "queue.title", "admin" => "admin.dashboard", "chat" => _isAdmin ? "chat.adminTitle" : "chat.title", "admin/problems/new" => "problem.new", "admin/users" => "users.title", "problems" => "nav.problems", "standings" => "nav.standings",
+        "admin/contests/new" => "nav.admin", var x when x.StartsWith("problems/") => "problem.statement", _ => "nav.contests" }];
+    protected override void OnInitialized() { Ui.Changed += Refresh; Navigation.LocationChanged += OnLocation; }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if(firstRender) await Ui.InitializeAsync();if(_ready&&!_isAdmin&&!_pollStarted){_pollStarted=true;_=PollAccessAsync(_stop.Token);} }
+    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+    private void OnLocation(object? sender, LocationChangedEventArgs args) { _menuOpen = false; Refresh(); }
+    public void Dispose() { _stop.Cancel();_stop.Dispose(); Ui.Changed -= Refresh; Navigation.LocationChanged -= OnLocation; }
+}
+
+
+

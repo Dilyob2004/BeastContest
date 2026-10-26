@@ -1,0 +1,10 @@
+@page "/"
+@attribute [Authorize]
+@inject ICurrentActor Actor
+@inject NavigationManager Navigation
+@code {
+    protected override async Task OnInitializedAsync() {
+        var actor=await Actor.GetAsync();
+        Navigation.NavigateTo(actor.IsAdmin ? "/admin" : actor.IsAuthenticated ? "/problems" : "/account/login",replace:true);
+    }
+}

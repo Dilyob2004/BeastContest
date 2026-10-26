@@ -1,0 +1,49 @@
+@page "/problems"
+@inherits LocalizedComponent
+@inject ProblemStore Store
+@inject SubmissionStore Submissions
+@inject ICurrentActor Actor
+@inject LiveEvents Live
+<PageTitle>@Ui["library.title"] · BeastContest</PageTitle>
+@if(Deleted){<AuthorizeView Roles="Admin"><p class="notice" role="status">@Ui["problem.deleted"]</p></AuthorizeView>}
+<div class="catalog-heading page-heading"><div><h1>@Ui["library.title"]</h1><p>@Ui["library.subtitle"]</p></div><AuthorizeView Roles="Admin"><a class="button primary" href="/admin/problems/new"><Icon Name="plus"/>@Ui["library.add"]</a></AuthorizeView></div>
+<div class="toolbar"><div class="search"><Icon Name="search"/><input aria-label="@Ui["library.search"]" placeholder="@Ui["library.search"]" @bind="_query" @bind:event="oninput"/></div><AuthorizeView Roles="Admin"><select aria-label="@Ui["library.level"]" @bind="_level"><option value="">@Ui["library.all"]</option>@foreach(var level in new[]{"easy","medium","hard"}){<option value="@level">@Ui["level."+level]</option>}</select></AuthorizeView></div>
+@if(_loading){<p>@Ui["common.loading"]</p>}
+else if(_error){<div class="notice">@Ui["common.error"]</div>}
+else{<div class="panel library-panel">@foreach(var p in Filtered){var status=_statuses.GetValueOrDefault(p.Id);var hasStatus=_statuses.ContainsKey(p.Id);<a class="problem-row @(hasStatus ? "problem-status-"+status : "")" href="@($"/problems/{p.Id}")"><span class="problem-letter">@DemoCatalog.Number(Array.IndexOf(_problems,p))</span><div class="problem-row-text"><strong>@Ui.Text(p.Title)</strong><small>@string.Join(" · ",p.Tags.Select(t=>Ui["tag."+t]))</small>@if(hasStatus){<span class="personal-problem-status">@(status==PersonalProblemStatus.Accepted ? "✓ " : status==PersonalProblemStatus.Failed ? "✕ " : "◷ ")@Ui["library.status."+status]</span>}</div><AuthorizeView Roles="Admin"><span class="difficulty @p.Difficulty">@Ui["level."+p.Difficulty]</span></AuthorizeView><span class="problem-limits">@p.TimeMs ms / @p.MemoryMb @Ui["detail.memoryUnit"]</span><Icon Name="arrow"/></a>}@if(!Filtered.Any()){<div class="empty"><h3>@Ui["contests.empty"]</h3></div>}</div>}
+@code{
+    [SupplyParameterFromQuery(Name="deleted")] public bool Deleted {get;set;}
+    private string _query="",_level="";private Problem[] _problems=[];private bool _loading=true,_error,_admin;
+    private Dictionary<string,PersonalProblemStatus> _statuses=[];
+    private readonly CancellationTokenSource _stop=new();
+    private IEnumerable<Problem> Filtered=>_problems.Where(p=>(string.IsNullOrEmpty(_level)||p.Difficulty==_level)&&Ui.Text(p.Title).Contains(_query,StringComparison.OrdinalIgnoreCase));
+    protected override async Task OnInitializedAsync(){try{var actor=await Actor.GetAsync();_admin=actor.IsAdmin;_userId=actor.Id;_problems=await Store.GetAllAsync();if(!_admin)_statuses=await Submissions.ProblemStatusesAsync();}catch(Exception ex) when(ex is System.Data.Common.DbException or InvalidOperationException or UnauthorizedAccessException){_error=true;}finally{_loading=false;}}
+    private bool _pollStarted;
+    private IDisposable? _live;private string _userId="";
+    protected override Task OnAfterRenderAsync(bool firstRender){
+        if(!_pollStarted&&!_loading&&!_error&&!_admin){
+            _pollStarted=true;
+            _live=Live.Subscribe(e=>e.AffectsUser(_userId),RefreshStatusesAsync);
+            _=PollStatusesAsync(_stop.Token);
+        }
+        return Task.CompletedTask;
+    }
+    private async Task RefreshStatusesAsync(){
+        if(_stop.IsCancellationRequested)return;
+        var statuses=await Submissions.ProblemStatusesAsync(_stop.Token);
+        await InvokeAsync(()=>{if(!_stop.IsCancellationRequested){_statuses=statuses;StateHasChanged();}});
+    }
+    private async Task PollStatusesAsync(CancellationToken token){
+        using var timer=new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try{
+            while(await timer.WaitForNextTickAsync(token)){
+                try{
+                    var statuses=await Submissions.ProblemStatusesAsync(token);
+                    await InvokeAsync(()=>{if(!token.IsCancellationRequested){_statuses=statuses;StateHasChanged();}});
+                }catch(UnauthorizedAccessException){await InvokeAsync(()=>{_statuses.Clear();StateHasChanged();});break;}
+                catch(Exception ex) when(ex is System.Data.Common.DbException or InvalidOperationException){ /* Retry on the next tick. */ }
+            }
+        }catch(OperationCanceledException) when(token.IsCancellationRequested){}
+    }
+    public override void Dispose(){_live?.Dispose();_stop.Cancel();_stop.Dispose();base.Dispose();}
+}

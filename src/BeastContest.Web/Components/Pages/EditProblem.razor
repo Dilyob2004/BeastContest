@@ -1,0 +1,26 @@
+@page "/admin/problems/{Id}/edit"
+@attribute [Authorize(Roles="Admin")]
+@inherits LocalizedComponent
+@inject ProblemStore Store
+@inject NavigationManager Navigation
+<PageTitle>@Ui["problem.edit"] · BeastContest</PageTitle>
+<a href="@($"/problems/{Id}")" class="back-link"><Icon Name="back" />@Ui["problem.statement"]</a>
+<div class="page-heading"><h1>@Ui["problem.edit"]</h1><p>@Ui["problem.editHint"]</p></div>
+@if(_error is not null){<div class="validation" role="alert">@Ui[_error]</div>}
+else if(_draft is null){<p>@Ui["common.loading"]</p>}
+else{
+    <p class="muted"><a href="@($"/admin/problems/{Id}/tests")">@Ui["problem.editTests"]</a></p>
+    <ProblemForm Draft="_draft" Save="SaveAsync" Editing="true" CancelHref="@($"/problems/{Id}")"/>
+}
+@code {
+    [Parameter] public string Id {get;set;}="";
+    private ProblemDraft? _draft;private string? _error;
+    protected override async Task OnParametersSetAsync(){
+        _draft=null;_error=null;
+        try{_draft=await Store.GetDraftAsync(Id);}
+        catch(DomainException ex){_error=ex.Keys[0];}
+        catch(UnauthorizedAccessException){_error="auth.denied";}
+        catch(System.Data.Common.DbException){_error="common.error";}
+    }
+    private async Task SaveAsync(ProblemDraft draft){await Store.UpdateAsync(Id,draft);Navigation.NavigateTo($"/problems/{Id}?saved=true");}
+}

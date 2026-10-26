@@ -1,0 +1,79 @@
+@page "/standings"
+@page "/contests/{LiveContestId:guid}/standings"
+@inherits LocalizedComponent
+@inject ContestStore Store
+@inject ProblemStore Problems
+@inject StandingsStore Scores
+@inject NavigationManager Navigation
+@inject ICurrentActor Actor
+@inject LiveEvents Live
+<PageTitle>@Ui["standings.title"] · BeastContest</PageTitle>
+<div class="page-heading"><h1>@Ui["standings.title"]</h1><p>@Ui["standings.subtitle"]</p></div>
+@if(LiveContestId is null){
+@foreach(var active in _active){<a class="button secondary" href="@($"/contests/{active.Id}/standings")">@Ui["standings.current"]: @Ui.Text(active.Title) · @Ui["status.Running"]</a>}
+@if(_admin||_completed.Length>0){<section class="panel result-picker"><label for="completed-contest">@Ui["standings.select"]</label><select id="completed-contest" value="@ContestId?.ToString()" @onchange="SelectContest"><option value="">@Ui["standings.selectPlaceholder"]</option>@foreach(var contest in _completed){<option value="@contest.Id">@Ui.Text(contest.Title) · @Ui.Scoring(contest.Scoring) @(contest.IsDemo ? " · "+Ui["contests.demoBadge"]:"")</option>}</select></section>}
+}
+@if(_error){<div class="notice">@Ui["common.error"]</div>}
+else if(_loading){<p>@Ui["common.loading"]</p>}
+else if(_selected is null){<div class="panel empty results-empty"><Icon Name="trophy"/><h2>@Ui[ContestId is null?"standings.chooseTitle":"standings.unavailable"]</h2><p>@Ui[_completed.Length==0?"standings.noCompleted":"standings.chooseHint"]</p></div>}
+else{
+    @if(_selected.IsDemo){<div class="notice"><Icon Name="info"/><span>@Ui["standings.notice"]</span></div>}
+    @if(!_selected.IsDemo){
+        <div class="notice"><span>@Ui[_view?.FrozenAt is null?"freeze.live":_view.IsAdmin?"freeze.adminHint":"freeze.participantHint"] @if(_view?.FrozenAt is {} frozen){<span>@frozen.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>}</span></div>
+        <div class="panel-title"><button class="button secondary" @onclick="OnParametersSetAsync">@Ui["judge.refresh"]</button>
+        <a class="button secondary" href="@($"/contests/{_selected.Id}/standings.csv?lang={Ui.Language}")" download data-enhance-nav="false">@Ui["csv.download"]</a>
+        @if(_view?.IsAdmin==true){<button class="button secondary" disabled="@_saving" @onclick="ToggleFreeze">@Ui[_view.FrozenAt is null?"freeze.freeze":"freeze.unfreeze"]</button>}
+        </div>
+    }
+    <section class="panel standings-panel"><div class="panel-title"><div><h2>@Ui.Text(_selected.Title)</h2><p class="small">@Ui["status."+_selected.Status] · @_selected.EndsAt?.ToString("yyyy-MM-dd HH:mm") UTC</p></div><span class="badge badge-green">@Ui.Scoring(_selected.Scoring)</span></div>
+    @if(!Rows.Any()){<div class="empty"><Icon Name="trophy"/><h3>@Ui["standings.noResults"]</h3><p>@Ui["standings.noResultsHint"]</p></div>}
+    else{<div class="table-scroll"><table><thead><tr><th scope="col">#</th><th scope="col">@Ui["standings.participant"]</th><th scope="col">@Ui[_selected.Scoring==ScoringMode.Icpc?"standings.solved":"standings.total"]</th>@if(_selected.Scoring==ScoringMode.Icpc){<th scope="col">@Ui["standings.penalty"]</th>}<th scope="col">@Ui["standings.time"]</th><th scope="col">@Ui["standings.attempts"]</th>@for(var i=0;i<_selected.ProblemIds.Length;i++){var id=_selected.ProblemIds[i];<th scope="col"><a href="@("/problems/"+id)" title="@(_problems.FirstOrDefault(p=>p.Id==id) is {} p ? Ui.Text(p.Title) : id)">@DemoCatalog.Number(i)</a></th>}</tr></thead><tbody>
+    @foreach(var row in Rows){<tr><td><span class="rank">@row.Rank</span></td><td><div class="participant"><span class="avatar">@row.Name[..Math.Min(2,row.Name.Length)].ToUpperInvariant()</span><strong>@row.Name</strong></div></td><td class="solved">@row.Score</td>@if(_selected.Scoring==ScoringMode.Icpc){<td class="penalty">@row.Penalty</td>}<td class="standing-time">@StandingsStore.FormatTime(row.TimeSeconds)</td><td>@(row.Attempts?.ToString()??"—")</td>@for(var i=0;i<row.Results.Length;i++){var result=row.Results[i];<td><span class="score-cell @(result.StartsWith('-')?"rejected":result=="—"?"":"accepted")">@result</span><small class="result-detail">@StandingsStore.FormatTime(row.ProblemSeconds?.ElementAtOrDefault(i))</small><small class="result-detail">@Ui["standings.attempts"]: @(row.ProblemAttempts?.ElementAtOrDefault(i).ToString()??"—")</small></td>}</tr>}
+    </tbody></table></div><p class="table-legend">@Ui[_selected.Scoring==ScoringMode.Icpc?"standings.legend":"standings.pointsLegend"]</p><p class="table-legend">@Ui["standings.timeHint"]</p>}
+    </section>
+}
+@code{
+    [Parameter] public Guid? LiveContestId {get;set;}
+    private StandingsView? _view;private bool _saving,_admin;
+    [SupplyParameterFromQuery(Name="contest")] public Guid? ContestId {get;set;}
+    private Contest[] _active=[],_completed=[];private Contest? _selected;private Problem[] _problems=[];private bool _loading=true,_error;
+    private StandingRow[] _realRows=[];
+    private IEnumerable<StandingRow> Rows=>_selected is {IsDemo:false}?_realRows:_selected?.Id==DemoCatalog.Contests[0].Id ? IcpcRows : PointsRows;
+    private static readonly StandingRow[] IcpcRows=[
+        new(1,"binary_fox",5,247,["+ 08","+ 24","+ 46","+1 61","+ 88"],5280,6,[480,1440,2760,3660,5280],[1,1,1,2,1]),
+        new(2,"null_pointer",4,193,["+ 12","+ 31","+1 49","+ 81","-2"],4860,7,[720,1860,2940,4860,null],[1,1,2,1,2]),
+        new(3,"recursion",4,219,["+ 15","+1 38","+ 62","+ 84","—"],5040,5,[900,2280,3720,5040,null],[1,2,1,1,0]),
+        new(4,"delta_wave",3,137,["+ 18","+ 43","+1 56","-1","—"],3360,5,[1080,2580,3360,null,null],[1,1,2,1,0]),
+        new(5,"pixel_knight",2,71,["+ 22","+ 49","-3","—","—"],2940,5,[1320,2940,null,null,null],[1,1,3,0,0]),
+        new(6,"hello_world",1,28,["+ 28","-1","—","—","—"],1680,2,[1680,null,null,null,null],[1,1,0,0,0])];
+    private static readonly StandingRow[] PointsRows=[
+        new(1,"delta_wave",300,0,["100","100","100"],3000,4,[600,1800,3000],[1,1,2]),
+        new(2,"pixel_knight",240,0,["100","80","60"],1800,5,[600,1200,1800],[1,2,2]),
+        new(3,"binary_fox",240,0,["100","100","40"],2400,6,[600,1500,2400],[2,1,3]),
+        new(4,"hello_world",100,0,["100","0","0"],1200,3,[1200,null,null],[1,1,1])];
+    protected override async Task OnParametersSetAsync(){
+        _loading=true;_error=false;
+        try{_admin=(await Actor.GetAsync()).IsAdmin;_active=(await Store.GetAllAsync()).Where(c=>!c.IsDemo&&c.Status==ContestStatus.Running).ToArray();_completed=await Store.GetCompletedAsync();_selected=LiveContestId is {} live?(await Store.GetAllAsync()).FirstOrDefault(c=>c.Id==live&&c.Status is ContestStatus.Running or ContestStatus.Finished):_completed.FirstOrDefault(c=>c.Id==ContestId);if(!_admin&&LiveContestId is null&&ContestId is null)_selected=_active.OrderBy(c=>c.StartsAt).FirstOrDefault()??_completed.FirstOrDefault();_problems=await Problems.GetAllAsync();_view=_selected is {IsDemo:false}?await Scores.GetViewAsync(_selected.Id):null;_realRows=_view?.Rows??[];}
+        catch(Exception ex) when(ex is System.Data.Common.DbException or InvalidOperationException){_error=true;}
+        finally{_loading=false;}
+    }
+    private async Task ToggleFreeze(){
+        if(_saving||_selected is null||_view?.IsAdmin!=true)return;_saving=true;
+        try{await Scores.SetFrozenAsync(_selected.Id,_view.FrozenAt is null);await OnParametersSetAsync();}
+        catch(Exception ex) when(ex is DomainException or System.Data.Common.DbException){_error=true;}
+        finally{_saving=false;}
+    }
+    private IDisposable? _live;
+    protected override void OnAfterRender(bool firstRender){
+        // Running contests refresh as verdicts arrive; finished ones change only on rejudge or publication.
+        if(firstRender)_live=Live.Subscribe(e=>_selected is {IsDemo:false} selected&&e.AffectsContest(selected.Id),()=>InvokeAsync(ReloadViewAsync));
+    }
+    private async Task ReloadViewAsync(){
+        if(_selected is not {IsDemo:false} selected||_saving)return;
+        try{_view=await Scores.GetViewAsync(selected.Id);_realRows=_view.Rows;StateHasChanged();}
+        catch(Exception ex) when(ex is System.Data.Common.DbException or InvalidOperationException or UnauthorizedAccessException){}
+    }
+    public override void Dispose(){_live?.Dispose();base.Dispose();}
+    private void SelectContest(ChangeEventArgs e)=>Navigation.NavigateTo(Guid.TryParse(e.Value?.ToString(),out var id)?"/standings?contest="+id:"/standings");
+}
+

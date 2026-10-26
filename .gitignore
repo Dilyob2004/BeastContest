@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+.vs/
+.local/
+**/App_Data/
+.env
+credentials/
+*.user

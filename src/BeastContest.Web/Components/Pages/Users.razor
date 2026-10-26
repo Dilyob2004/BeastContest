@@ -1,0 +1,49 @@
+@page "/admin/users"
+@attribute [Authorize(Roles="Admin")]
+@inherits LocalizedComponent
+@inject AccountService Accounts
+@inject ICurrentActor Actor
+@inject IJSRuntime Js
+@inject NavigationManager Navigation
+<PageTitle>@Ui["users.title"] · BeastContest</PageTitle>
+<div class="page-heading"><h1>@Ui["users.title"]</h1><p>@Ui["users.subtitle"]</p></div>
+@if(_errors.Length>0){<div class="validation" role="alert">@foreach(var key in _errors){<p>@Ui[key]</p>}</div>}
+@if(_success is not null){<div class="notice" role="status"><Icon Name="check"/>@Ui[_success]</div>}
+<div class="users-grid"><section class="panel users-list"><div class="panel-title"><h2>@Ui["users.title"]</h2><span class="count">@_users.Length</span></div>
+@foreach(var user in _users){<div class="user-row"><div class="participant"><span class="avatar">@user.DisplayName[..1].ToUpperInvariant()</span><div><strong>@user.DisplayName</strong><small>@@@user.Login · @Ui["auth.role."+user.Role]</small></div></div><div class="user-actions"><span class="badge @(user.Disabled?"badge-blue":"badge-green")">@Ui[user.Disabled?"users.disabled":"users.active"]</span>
+<button class="text-button" @onclick="()=>SelectReset(user)" disabled="@_busy">@Ui["users.reset"]</button>
+@if(user.Id!=_currentId){<button class="text-button" disabled="@_busy" @onclick="()=>SetDisabledAsync(user)">@Ui[user.Disabled?"users.enable":"users.disable"]</button>}
+else{<span class="small muted">@Ui["users.current"]</span>}
+@if(user.Role=="Participant"){<button class="text-button danger-text" disabled="@_busy" @onclick="()=>SelectDelete(user)">@Ui["users.delete"]</button>}
+</div></div>}
+</section><section class="panel form-panel account-create"><h2>@Ui["users.createParticipant"]</h2><p class="field-hint">@Ui["users.createHint"]</p>
+<form @onsubmit="CreateAsync" @onsubmit:preventDefault autocomplete="off"><label for="participant-login">@Ui["auth.login"]</label><input id="participant-login" @bind="_login" @bind:event="oninput" minlength="3" maxlength="40" pattern="[a-zA-Z0-9_.-]{3,40}" required disabled="@(_busy||_credentials is not null)"/><label for="participant-name">@Ui["users.displayName"]</label><input id="participant-name" @bind="_displayName" @bind:event="oninput" maxlength="80" required disabled="@(_busy||_credentials is not null)"/><button type="submit" class="button primary" disabled="@(_busy||_credentials is not null)">@Ui["users.createParticipant"]</button></form>
+@if(_credentials is not null){<div class="credentials-card" role="status"><h3>@Ui["users.credentials"]</h3><p>@Ui["auth.login"]: <strong>@_credentials.Login</strong></p><label for="participant-password">@Ui["users.newPassword"]</label><input id="participant-password" type="@(_showPassword?"text":"password")" readonly value="@_credentials.Password" autocomplete="off"/><button type="button" class="text-button" @onclick="()=>_showPassword=!_showPassword">@Ui[_showPassword?"users.hidePassword":"users.showPassword"]</button><p class="field-hint">@Ui["users.credentialsHint"]</p><div class="form-actions"><button class="button secondary" @onclick="DownloadAsync">@Ui["users.downloadCredentials"]</button><button class="button secondary" @onclick="ClearCredentials">@Ui["users.doneCredentials"]</button></div></div>}
+</section></div>
+@if(_delete is not null){<section class="panel delete-confirm"><h2>@Ui["users.delete"] · @_delete.Login</h2><p>@Ui["users.deleteHint"]</p><div class="form-actions"><button class="button secondary" disabled="@_busy" @onclick="()=>_delete=null">@Ui["common.cancel"]</button><button class="button secondary danger-button" disabled="@_busy" @onclick="DeleteAsync">@Ui["users.deleteConfirm"]</button></div></section>}
+@if(_reset is not null){<form class="panel form-panel reset-panel auth-form" @onsubmit="ResetAsync" @onsubmit:preventDefault><h2>@Ui["users.reset"] · @_reset.Login</h2><p class="field-hint">@Ui["users.resetHint"] @Ui[_reset.Role=="Participant"?"users.participantPasswordRules":"auth.passwordRules"]</p><label for="reset-password">@Ui["users.newPassword"]</label><input id="reset-password" type="password" @bind="_newPassword" @bind:event="oninput" minlength="@(_reset.Role=="Participant"?6:10)" maxlength="@(_reset.Role=="Participant"?6:128)" required autocomplete="new-password"/><div class="form-actions"><button type="button" class="button secondary" @onclick="()=>_reset=null">@Ui["common.cancel"]</button><button type="submit" class="button primary" disabled="@_busy">@Ui["common.save"]</button></div></form>}
+@code{
+    private AccountSummary[] _users=[];private string[] _errors=[];
+    private string _newPassword="",_currentId="",_login="",_displayName="";
+    private ParticipantCredentials? _credentials;private bool _showPassword;private AccountSummary? _delete;
+    private void SelectDelete(AccountSummary user){_delete=user;_reset=null;_success=null;_errors=[];}
+    private Task DeleteAsync()=>ExecuteAsync(async()=>{await Accounts.DeleteParticipantAsync(_delete!.Id);_delete=null;},"users.deleted");
+    private Task CreateAsync()=>ExecuteAsync(async()=>{_credentials=await Accounts.CreateParticipantAsync(_login.Trim(),_displayName.Trim());_showPassword=false;},"users.created");
+    private void ClearCredentials(){_credentials=null;_showPassword=false;_login="";_displayName="";}
+    private async Task DownloadAsync(){if(_credentials is null)return;await Js.InvokeVoidAsync("beast.downloadText",$"beastcontest-{_credentials.Login}.txt",$"BeastContest\r\nLogin: {_credentials.Login}\r\nPassword: {_credentials.Password}\r\nWebsite: {Navigation.BaseUri}account/login\r\n");}
+    private string? _success;private bool _busy;private AccountSummary? _reset;
+    protected override async Task OnInitializedAsync(){_currentId=(await Actor.GetAsync()).Id;await LoadAsync();}
+    private async Task LoadAsync(){try{_users=await Accounts.GetAllAsync();}catch(UnauthorizedAccessException){_errors=["auth.denied"];}}
+    private void SelectReset(AccountSummary user){_reset=user;_delete=null;_newPassword="";_success=null;_errors=[];}
+    private async Task ExecuteAsync(Func<Task> action,string success){
+        if(_busy)return;_busy=true;_errors=[];_success=null;
+        try{await action();_success=success;await LoadAsync();}
+        catch(DomainException ex){_errors=ex.Keys;}catch(UnauthorizedAccessException){_errors=["auth.denied"];}
+        catch(Microsoft.EntityFrameworkCore.DbUpdateException){_errors=["auth.failed"];}
+        catch(System.Data.Common.DbException){_errors=["common.error"];}
+        finally{_busy=false;}
+    }
+    private Task SetDisabledAsync(AccountSummary user)=>ExecuteAsync(()=>Accounts.SetDisabledAsync(user.Id,!user.Disabled),"users.saved");
+    private Task ResetAsync()=>ExecuteAsync(async()=>{await Accounts.ResetPasswordAsync(_reset!.Id,_newPassword);_newPassword="";_reset=null;},"users.saved");
+}
+

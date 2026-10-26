@@ -1,0 +1,113 @@
+@page "/problems/{Id}"
+@inherits LocalizedComponent
+@inject IJSRuntime Js
+@inject ProblemStore Store
+@inject ICurrentActor Actor
+@inject SubmissionStore Submissions
+@inject ContestStore Contests
+@inject NavigationManager Navigation
+@inject LiveEvents Live
+<PageTitle>@(_problem is null?Ui["library.title"]:Ui.Text(_problem.Title)) · BeastContest</PageTitle>
+<a class="back-link" href="/problems"><Icon Name="back"/>@Ui["library.title"]</a>
+@if(_loading){<p>@Ui["common.loading"]</p>}
+else if(_problem is null){<h1>@Ui["common.notfound"]</h1><p>@Ui["auth.deniedHint"]</p>}
+else{
+    <div class="page-heading">@if(_admin){<div class="eyebrow">@Ui["level."+_problem.Difficulty]</div>}<h1>@Ui.Text(_problem.Title)</h1><div class="chips"><span class="chip"><Icon Name="clock"/>@_problem.TimeMs ms</span><span class="chip">@_problem.MemoryMb @Ui["detail.memoryUnit"]</span>@if(_problem.CheckerMode!=CheckerModes.Tokens){<span class="chip" title="@Ui["checker."+_problem.CheckerMode+"Hint"]">@Ui["checker."+_problem.CheckerMode]@(_problem.CheckerMode==CheckerModes.Float?" · ε = "+_problem.CheckerEpsilon.ToString("G",System.Globalization.CultureInfo.InvariantCulture):"")</span>}</div></div>
+    @if(Saved){<AuthorizeView Roles="Admin"><p class="notice" role="status">@Ui["problem.saved"]</p></AuthorizeView>}
+    <AuthorizeView Roles="Admin"><div class="problem-admin-actions"><a class="button secondary" href="@($"/admin/problems/{Id}/edit")">@Ui["problem.edit"]</a><a class="button secondary" href="@($"/admin/problems/{Id}/tests")">@Ui["tests.title"]</a>
+    @if(!_problem.IsDemo){<button type="button" class="button secondary danger-button" @onclick="()=>_confirmDelete=true">@Ui["problem.delete"]</button>}
+    </div>
+    @if(_confirmDelete){<section class="panel delete-confirm" aria-labelledby="delete-heading"><h2 id="delete-heading">@Ui["problem.delete"]</h2><p><strong>@Ui.Text(_problem.Title)</strong></p><p>@Ui["problem.deleteHint"]</p>
+    @if(_deleteError is not null){<p class="validation" role="alert">@Ui[_deleteError]</p>}
+    <div class="form-actions"><button class="button secondary" disabled="@_deleting" @onclick="()=>{_confirmDelete=false;_deleteError=null;}">@Ui["common.cancel"]</button><button class="button secondary danger-button" disabled="@_deleting" @onclick="DeleteAsync">@Ui["problem.deleteConfirm"]</button></div></section>}
+    </AuthorizeView>
+    <div class="workspace-grid"><section class="panel statement-panel"><div class="panel-title"><h2>@Ui["problem.statement"]</h2><select aria-label="@Ui["problem.statementLanguage"]" @bind="_statementLanguage"><option value="ru">Русский</option><option value="en">English</option></select></div>
+    <div class="statement-content" lang="@_statementLanguage">
+    @if(!string.IsNullOrWhiteSpace(Selected(_problem.Statement))){<p class="statement-text">@Selected(_problem.Statement)</p>}
+    else{<p>@Ui["problem.missingTranslation"]</p>}
+    @if(_statementLanguage=="ru"?_problem.HasPdfRu:_problem.HasPdfEn){<a class="button secondary pdf-download" href="@($"/problems/{Id}/pdf/{_statementLanguage}")" download><Icon Name="book"/>@Ui["problem.downloadPdf"] · @_statementLanguage.ToUpperInvariant()</a>}
+    @if(!string.IsNullOrWhiteSpace(Selected(_problem.Input))){<h3>@Ui["problem.input"]</h3><p class="statement-text">@Selected(_problem.Input)</p>}
+    @if(!string.IsNullOrWhiteSpace(Selected(_problem.Output))){<h3>@Ui["problem.output"]</h3><p class="statement-text">@Selected(_problem.Output)</p>}
+    @if(!string.IsNullOrEmpty(_problem.SampleInput)||!string.IsNullOrEmpty(_problem.SampleOutput)){<h3>@Ui["problem.example"]</h3><div class="sample"><div><label>@Ui["problem.input"]</label><pre>@_problem.SampleInput</pre></div><div><label>@Ui["problem.output"]</label><pre>@_problem.SampleOutput</pre></div></div>}
+    </div></section><section class="panel editor-panel"><div class="panel-title"><h2>@Ui["problem.editor"]</h2><select aria-label="@Ui["problem.language"]" value="@_language" @onchange="ChangeLanguageAsync">@foreach(var language in DemoCatalog.Languages){<option value="@language">@language</option>}</select></div>
+    <div class="editor-file"><span class="code-dot"></span>@(_fileName??("solution."+Extension))<span>UTF-8</span></div>
+    <div class="editor-notice"><label>@Ui["judge.file"] <InputFile OnChange="ReadFileAsync" accept=".cpp,.cc,.cxx,.py,.cs,.java,.go,.hs,.js" disabled="@_sending" /></label><p>@Ui["judge.fileHint"]</p></div>
+    <textarea class="code-editor" aria-label="@Ui["problem.editor"]" placeholder="@Ui["problem.placeholder"]" spellcheck="false" value="@_code" @oninput="SaveCodeAsync" maxlength="65536"></textarea>
+    <div class="editor-notice"><label>@Ui["judge.contest"] <select @bind="_contest"><option value="">@Ui[_admin?"judge.practice":"judge.selectContest"]</option>@foreach(var c in _contests){<option value="@c.Id">@Ui.Text(c.Title)</option>}</select></label><p>@Ui["judge.supported"]</p><p>@Ui["judge.entry"]</p></div>
+    <div class="editor-bottom"><span><Icon Name="check"/>@Ui["problem.draft"]</span><button class="button primary" disabled="@(_sending||string.IsNullOrWhiteSpace(_code))" @onclick="SubmitAsync">@Ui["problem.submit"]<Icon Name="arrow"/></button></div>
+    @if(_message is not null){<p class="editor-notice" role="status">@Ui[_message]</p>}
+    </section></div>
+    <section class="panel" style="margin-top:24px;padding:24px"><div class="panel-title"><h2>@Ui["judge.history"]</h2><button class="button secondary" @onclick="RefreshAsync">@Ui["judge.refresh"]</button></div>
+    @if(_history.Length==0){<p>@Ui["judge.empty"]</p>}
+    @foreach(var s in _history){<div style="padding:12px 0;border-bottom:1px solid var(--border)"><strong>@Ui["judge."+s.Status]</strong> · @s.Language · @s.Passed / @s.Total@if(s.ShowScore&&s.Status is not ("Queued" or "Running")){<text> · @Ui["judge.score"]: @s.Score</text>} · @s.CreatedAt.ToString("dd.MM HH:mm:ss") UTC @if(!string.IsNullOrEmpty(s.Diagnostic)){<pre style="white-space:pre-wrap;overflow-wrap:anywhere">@s.Diagnostic</pre>}</div>}
+    </section>
+}
+@code{
+    [Parameter] public string Id {get;set;}="";
+    [SupplyParameterFromQuery(Name="saved")] public bool Saved {get;set;}
+    private IDisposable? _live;
+    private Problem? _problem;private bool _loading=true;
+    private bool _confirmDelete,_deleting;private string? _deleteError;
+    private async Task DeleteAsync(){
+        if(_deleting||!_confirmDelete)return;_deleting=true;_deleteError=null;
+        try{await Store.DeleteAsync(Id);Navigation.NavigateTo("/problems?deleted=true");}
+        catch(DomainException ex){_deleteError=ex.Keys[0];}
+        catch(UnauthorizedAccessException){_deleteError="auth.denied";}
+        catch(System.Data.Common.DbException){_deleteError="common.error";}
+        finally{_deleting=false;}
+    }
+    private string _language="C++",_statementLanguage="ru",_code="",_owner="guest";
+    private string? _loadedId;
+    private string? _fileName,_message;private string _contest="";private bool _sending,_admin;
+    private Contest[] _contests=[];private SubmissionSummary[] _history=[];
+    private readonly CancellationTokenSource _stop=new();
+    private string Key=>_owner+"."+Id+"."+_language;
+    private string Extension=>_language switch{"C++"=>"cpp","C#"=>"cs","Python"=>"py","Java"=>"java","Go"=>"go","Haskell"=>"hs",_=>"js"};
+    private string Selected(Translated? text)=>text is null?"":_statementLanguage=="ru"?text.Ru:text.En;
+    protected override async Task OnParametersSetAsync(){
+        _confirmDelete=false;_deleteError=null;
+        _loading=true;var current=await Actor.GetAsync();_owner=current.IsAuthenticated?current.Id:"guest";
+        _admin=current.IsAdmin;
+        _problem=(await Store.GetAllAsync()).FirstOrDefault(p=>p.Id==Id);
+        _contests=(await Contests.GetAllAsync()).Where(c=>!c.IsDemo&&c.Status==ContestStatus.Running&&c.ProblemIds.Contains(Id)).ToArray();
+        _contest=_contests.Length==1?_contests[0].Id.ToString():"";
+        await RefreshAsync();_loading=false;
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender){
+        if(firstRender){
+            // Verdicts arrive through live events; the slow timer only covers a lost connection.
+            _live=Live.Subscribe(e=>e.AffectsUser(_owner),()=>InvokeAsync(async()=>{await RefreshAsync();StateHasChanged();}));
+            _=PollAsync();
+        }
+        if(!_loading&&_problem is not null&&_loadedId!=Id){_loadedId=Id;await LoadCodeAsync();StateHasChanged();}
+    }
+    private async Task LoadCodeAsync()=>_code=await Js.InvokeAsync<string?>("beast.readDraft",Key)??"";
+    private async Task ChangeLanguageAsync(ChangeEventArgs e){_language=e.Value?.ToString()??"C++";_fileName=null;await LoadCodeAsync();}
+    private async Task SaveCodeAsync(ChangeEventArgs e){_code=e.Value?.ToString()??"";await Js.InvokeVoidAsync("beast.saveDraft",Key,_code);}
+    private async Task ReadFileAsync(InputFileChangeEventArgs e){
+        _message=null;
+        try{
+            var file=e.File;
+            await using var stream=file.OpenReadStream(SolutionFile.MaxBytes);
+            using var buffer=new MemoryStream();await stream.CopyToAsync(buffer);
+            var solution=SolutionFile.Read(file.Name,buffer.ToArray());
+            _language=solution.Language;_code=solution.Code;_fileName=Path.GetFileName(file.Name);
+            await Js.InvokeVoidAsync("beast.saveDraft",Key,_code);_message="judge.loaded";
+        }catch(Exception ex) when(ex is IOException or DomainException){_message="judge.fileError";}
+    }
+    private async Task RefreshAsync()=>_history=await Submissions.HistoryAsync(Id);
+    private async Task PollAsync(){
+        try{using var timer=new PeriodicTimer(TimeSpan.FromSeconds(30));while(await timer.WaitForNextTickAsync(_stop.Token)){await InvokeAsync(async()=>{await RefreshAsync();StateHasChanged();});}}
+        catch(OperationCanceledException){}catch(UnauthorizedAccessException){}
+    }
+    public override void Dispose(){_live?.Dispose();_stop.Cancel();base.Dispose();}
+    private async Task SubmitAsync(){
+        _sending=true;_message=null;
+        try{await Submissions.SubmitAsync(Guid.NewGuid(),Id,Guid.TryParse(_contest,out var id)?id:null,_language,_code);_message="judge.sent";await RefreshAsync();}
+        catch(DomainException e){_message=e.Keys[0];}
+        finally{_sending=false;}
+    }
+}
+
+
+

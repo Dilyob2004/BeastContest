@@ -1,0 +1,50 @@
+@page "/admin/contests/new"
+@attribute [Authorize(Roles="Admin")]
+@inherits LocalizedComponent
+@inject ProblemStore Problems
+@inject ContestStore Store
+@inject NavigationManager Navigation
+<PageTitle>@Ui["admin.title"] · BeastContest</PageTitle>
+<div class="page-heading"><h1>@Ui["admin.title"]</h1><p>@Ui["admin.subtitle"]</p></div>
+<div class="notice"><Icon Name="info" /><span>@Ui["admin.notice"]</span></div>
+<form @onsubmit="SaveAsync" @onsubmit:preventDefault class="create-grid">
+    <div class="form-stack">
+        @if (_errors.Length > 0) { <div class="validation" role="alert"><ul>@foreach(var error in _errors) { <li>@Ui[error]</li> }</ul></div> }
+        <section class="panel form-panel"><div class="section-heading"><span class="step">01</span><div><h2>@Ui["admin.basics"]</h2><p>@Ui["admin.basicsHint"]</p></div></div>
+            <label for="contest-title">@Ui["admin.name"] <span class="required">*</span></label><input id="contest-title" placeholder="@Ui["admin.namePlaceholder"]" maxlength="100" @bind="_draft.Title" @bind:event="oninput" />
+            <label for="contest-description">@Ui["admin.description"]</label><textarea id="contest-description" rows="3" maxlength="2000" placeholder="@Ui["admin.descriptionPlaceholder"]" @bind="_draft.Description" @bind:event="oninput"></textarea>
+        </section>
+        <section class="panel form-panel"><div class="section-heading"><span class="step">02</span><div><h2>@Ui["admin.rules"]</h2></div></div>
+            <label for="scoring">@Ui["admin.scoring"]</label><select id="scoring" @bind="_draft.Scoring"><option value="@ScoringMode.Icpc">@Ui["scoring.icpc"]</option><option value="@ScoringMode.Points">@Ui["scoring.points"]</option></select>
+            <p class="field-hint">@Ui[_draft.Scoring == ScoringMode.Icpc ? "scoring.icpcHint" : "scoring.pointsHint"]</p>
+            <div class="form-two"><div><label for="duration">@Ui["admin.duration"]</label><input id="duration" type="number" min="5" max="10080" @bind="_draft.DurationMinutes" @bind:event="oninput" /></div><div><label for="capacity">@Ui["admin.participants"]</label><input id="capacity" type="number" min="1" max="100" @bind="_draft.ParticipantLimit" @bind:event="oninput" /></div></div>
+        </section>
+        <section class="panel form-panel"><div class="section-heading"><span class="step">03</span><div><h2>@Ui["admin.languages"]</h2><p>@Ui["admin.languagesHint"]</p></div></div>
+            <div class="language-options">@foreach(var language in DemoCatalog.Languages) { <label class="option-chip"><input type="checkbox" checked="@_draft.Languages.Contains(language)" @onchange="() => Toggle(_draft.Languages, language)" /><span>@language</span></label> }</div>
+        </section>
+        <section class="panel form-panel"><div class="section-heading"><span class="step">04</span><div><h2>@Ui["admin.problems"]</h2><p>@Ui["admin.problemsHint"]</p></div></div>
+            @foreach(var p in _problems) { <label class="check-problem"><input type="checkbox" checked="@_draft.ProblemIds.Contains(p.Id)" @onchange="() => Toggle(_draft.ProblemIds, p.Id)" /><span class="problem-letter">@DemoCatalog.Number(Array.IndexOf(_problems,p))</span><span>@Ui.Text(p.Title)</span><span class="difficulty @p.Difficulty">@Ui["level." + p.Difficulty]</span></label> }
+        </section>
+        <section class="panel form-panel"><h2>@Ui["enrollment.title"]</h2><ParticipantPicker Selected="_draft.ParticipantIds"/></section>
+        <section class="panel form-panel"><h2>@Ui["schedule.title"]</h2><ContestScheduleInput @bind-Value="_draft.StartsAt"/></section>
+    </div>
+    <aside class="create-preview"><div class="panel preview-panel"><span class="eyebrow">@Ui["admin.preview"]</span><div class="preview-art"><Icon Name="trophy" /></div><span class="badge badge-blue">@Ui[_draft.StartsAt is null?"contests.draftBadge":"status.Scheduled"]</span><h2>@(string.IsNullOrWhiteSpace(_draft.Title) ? Ui["admin.untitled"] : _draft.Title)</h2><p>@_draft.Description</p><div class="preview-facts"><span>@Ui["admin.scoring"]<b>@Ui.Scoring(_draft.Scoring)</b></span><span>@Ui["contests.duration"]<b>@_draft.DurationMinutes @Ui["common.minutes"]</b></span><span>@Ui["contests.problems"]<b>@_draft.ProblemIds.Count</b></span><span>@Ui["contests.capacity"]<b>@_draft.ParticipantLimit</b></span></div><button class="button primary full" type="submit" disabled="@_saving"><Icon Name="check" />@Ui[_saving ? "admin.saving" : "admin.save"]</button><p class="small">@Ui["admin.saveHint"]</p><a class="cancel-link" href="/">@Ui["admin.cancel"]</a></div></aside>
+</form>
+@code {
+    private readonly ContestDraft _draft = new();
+    private Problem[] _problems = [];
+    protected override async Task OnInitializedAsync() => _problems = await Problems.GetAllAsync();
+    private string[] _errors = [];
+    private bool _saving;
+    private static void Toggle(List<string> values, string value) { if (!values.Remove(value)) values.Add(value); }
+    private async Task SaveAsync() {
+        if (_saving) return;
+        _errors = _draft.Validate(); if (_errors.Length > 0) return;
+        _saving = true;
+        try { var contest = await Store.CreateAsync(_draft); Navigation.NavigateTo($"/contests/{contest.Id}"); }
+        catch (DomainException ex) { _errors = ex.Keys; }
+        catch (UnauthorizedAccessException) { _errors = ["auth.denied"]; }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException) { _errors = ["admin.saveError"]; }
+        finally { _saving = false; }
+    }
+}

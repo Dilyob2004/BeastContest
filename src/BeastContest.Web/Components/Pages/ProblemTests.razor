@@ -1,0 +1,28 @@
+@page "/admin/problems/{Id}/tests"
+@attribute [Authorize(Roles="Admin")]
+@inherits LocalizedComponent
+@inject TestSuiteStore Store
+@inject ProblemStore Problems
+@inject IJSRuntime Js
+<PageTitle>@Ui["tests.title"] · BeastContest</PageTitle>
+<a class="back-link" href="@($"/problems/{Id}")">← @Ui["problem.statement"]</a>
+<div class="page-heading"><h1>@Ui["tests.title"]</h1><p>@_title</p></div>
+<p class="notice">@Ui["tests.private"]</p>
+@if(_error is not null){<div class="validation" role="alert">@Ui[_error]</div>}
+@if(_saved){<div class="notice" role="status">@Ui["tests.saved"]</div>}
+@if(_loaded){
+<p class="muted">@Ui["tests.revision"]: @_revision</p>
+<TestEditor Tests="_tests" Disabled="@_busy" Changed="Changed" BusyChanged="value=>_uploading=value"/>
+<div class="form-actions"><span class="muted">@Ui[_dirty?"tests.unsaved":"tests.clean"]</span><button class="button primary" disabled="@(_busy || _uploading || !_dirty)" @onclick="SaveAsync">@Ui["common.save"]</button></div>
+<NavigationLock ConfirmExternalNavigation="@_dirty" OnBeforeInternalNavigation="BeforeNavigationAsync"/>
+}
+@code{
+    [Parameter] public string Id{get;set;}="";
+    private List<TestCaseDraft> _tests=[];private int _revision;private string _title="";private string? _error;
+    private bool _busy,_saved,_dirty,_loaded,_uploading;
+    protected override async Task OnParametersSetAsync(){try{var suite=await Store.GetAsync(Id);_tests=suite.Tests.ToList();_revision=suite.Revision;_title=Ui.Text((await Problems.GetAllAsync()).Single(p=>p.Id==Id).Title);_loaded=true;_dirty=false;}catch(BeastContest.Web.Models.DomainException ex){_error=ex.Keys[0];}catch(UnauthorizedAccessException){_error="auth.denied";}catch(System.Data.Common.DbException){_error="common.error";}}
+    private async Task BeforeNavigationAsync(LocationChangingContext context){if(_dirty && !await Js.InvokeAsync<bool>("confirm",Ui["tests.leave"]))context.PreventNavigation();}
+    private void Changed(){_dirty=true;_saved=false;}
+    private async Task SaveAsync(){if(_busy||_uploading)return;_busy=true;_error=null;try{_revision=await Store.SaveAsync(Id,_revision,_tests.ToArray());_dirty=false;_saved=true;}catch(BeastContest.Web.Models.DomainException ex){_error=ex.Keys[0];}catch(UnauthorizedAccessException){_error="auth.denied";}catch(System.Data.Common.DbException){_error="common.error";}finally{_busy=false;}}
+}
+

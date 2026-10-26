@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BeastContest.Web/BeastContest.Web.csproj" />
+    <Project Path="src/BeastContest.Judge/BeastContest.Judge.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BeastContest.Checks/BeastContest.Checks.csproj" />
+  </Folder>
+</Solution>
+

@@ -1,0 +1,51 @@
+@page "/chat"
+@attribute [Authorize]
+@inherits LocalizedComponent
+@implements IAsyncDisposable
+@inject ChatService Messages
+@inject AccountService Accounts
+@inject ICurrentActor Actor
+@inject LiveEvents Live
+<PageTitle>@Ui[_admin?"chat.adminTitle":"chat.title"] · BeastContest</PageTitle>
+<div class="page-heading"><h1>@Ui[_admin?"chat.adminTitle":"chat.title"]</h1><p>@Ui[_admin?"admin.chatHint":"chat.hint"]</p></div>
+@if(_error){<div class="validation" role="alert">@Ui["common.error"]</div>}
+<section class="panel chat-panel">
+@if(_admin){<label for="chat-user">@Ui["chat.recipient"]</label><select id="chat-user" @bind="_recipient" @bind:after="ReloadAsync"><option value="">@Ui["chat.choose"]</option>@foreach(var user in _users){<option value="@user.Id">@user.DisplayName (@user.Login)</option>}</select>}
+@if(!_admin || _recipient.Length>0){
+<div class="chat-messages" role="log" aria-live="polite">
+@if(_messages.Length==0){<p class="muted">@Ui["chat.empty"]</p>}
+@foreach(var message in _messages){<article class="chat-message @(message.FromAdmin ? "from-admin" : "")"><header><strong>@message.SenderName</strong><span>@Ui[message.FromAdmin ? "auth.role.Admin" : "auth.role.Participant"] · @message.SentAt.ToString("dd.MM HH:mm") UTC</span></header><p>@message.Body</p></article>}
+</div>
+<form @onsubmit="SendAsync" @onsubmit:preventDefault><label for="chat-body">@Ui["chat.message"]</label><textarea id="chat-body" rows="3" maxlength="2000" required @bind="_body" @bind:event="oninput"></textarea><div class="form-actions"><small class="muted">@Ui["chat.limit"]</small><button class="button primary" disabled="@_busy">@Ui["chat.send"]</button></div></form>
+}
+</section>
+@code {
+    private bool _admin,_busy,_error;
+    private string _recipient="",_body="";
+    private AccountSummary[] _users=[];
+    private BeastContest.Web.Data.ChatMessage[] _messages=[];
+    private readonly CancellationTokenSource _cancel=new();
+    private Task? _poll;
+    protected override async Task OnInitializedAsync(){
+        var actor=await Actor.GetAsync(); _admin=actor.IsAdmin; _self=actor.Id;
+        if(_admin) _users=(await Accounts.GetAllAsync()).Where(u=>u.Role=="Participant").ToArray();
+        await ReloadAsync();
+    }
+    private IDisposable? _live;private string _self="";
+    protected override Task OnAfterRenderAsync(bool firstRender){
+        if(firstRender){
+            _live=Live.Subscribe(e=>e.Kind=="resync"||(e.Kind=="chat"&&e.ParticipantId==(_admin?_recipient:_self)),()=>InvokeAsync(async()=>{await ReloadAsync();StateHasChanged();}));
+            _poll=PollAsync();
+        }
+        return Task.CompletedTask;
+    }
+    private async Task PollAsync(){try {using var timer=new PeriodicTimer(TimeSpan.FromSeconds(30));while(await timer.WaitForNextTickAsync(_cancel.Token)) await InvokeAsync(async()=>{await ReloadAsync();StateHasChanged();});}catch(OperationCanceledException){}}
+    private async Task ReloadAsync(){
+        if(_admin && _recipient.Length==0){_messages=[];return;}
+        try{_messages=await Messages.ReadAsync(_admin?_recipient:null);_error=false;}
+        catch(Exception ex) when(ex is UnauthorizedAccessException or System.Data.Common.DbException){_error=true;}
+    }
+    private async Task SendAsync(){if(_busy)return;_busy=true;try{await Messages.SendAsync(_body,_admin?_recipient:null);_body="";await ReloadAsync();}catch(Exception ex) when(ex is ArgumentException or UnauthorizedAccessException or System.Data.Common.DbException){_error=true;}finally{_busy=false;}}
+    public async ValueTask DisposeAsync(){_live?.Dispose();_cancel.Cancel();if(_poll is not null)await _poll;_cancel.Dispose();}
+}
+

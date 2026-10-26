@@ -1,0 +1,14 @@
+@page "/admin/problems/new"
+@attribute [Authorize(Roles="Admin")]
+@inherits LocalizedComponent
+@inject ProblemStore Store
+@inject NavigationManager Navigation
+<PageTitle>@Ui["problem.new"] · BeastContest</PageTitle>
+<a href="/problems" class="back-link"><Icon Name="back" />@Ui["library.title"]</a>
+<div class="page-heading"><h1>@Ui["problem.new"]</h1><p>@Ui["problem.newHint"]</p></div>
+<div class="notice"><Icon Name="info" /><span>@Ui["library.visibility"]</span></div>
+<ProblemForm Draft="_draft" Save="SaveAsync" ShowTests="true" CancelHref="/problems"/>
+@code {
+    private readonly ProblemDraft _draft=new();
+    private async Task SaveAsync(ProblemDraft draft){var problem=await Store.CreateAsync(draft);Navigation.NavigateTo("/problems/"+problem.Id);}
+}

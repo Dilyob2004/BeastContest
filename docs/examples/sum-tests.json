@@ -1,0 +1,5 @@
+[
+  { "Input": "2 3\n", "Output": "5\n" },
+  { "Input": "-7 7\n", "Output": "0\n" },
+  { "Input": "0 0\n", "Output": "0\n" }
+]

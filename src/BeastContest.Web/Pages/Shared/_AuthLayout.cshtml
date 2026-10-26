@@ -1,0 +1,10 @@
+@inject BeastContest.Web.Services.Translations Translations
+@{
+    var language = Context.Request.Query["lang"].ToString() is "ru" or "en" ? Context.Request.Query["lang"].ToString() : Context.Request.Cookies["beast.language"] == "en" ? "en" : "ru";
+
+}
+<!DOCTYPE html>
+<html lang="@language" data-theme="dark"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>@ViewData["Title"] · BeastContest</title><link rel="stylesheet" href="/app.css"/><link rel="icon" href="/favicon.svg"/><script src="/preferences.js"></script></head>
+<body class="account-body"><script>window.beast.apply("@language", window.beast.preferences()[1]);</script><div class="auth-bar"><a class="brand" href="/">beast<span class="brand-light">contest</span></a><a href="?lang=@(language=="ru" ? "en" : "ru")">@(language=="ru" ? "English" : "Русский")</a></div><main class="account-shell">@RenderBody()</main></body></html>
+
+

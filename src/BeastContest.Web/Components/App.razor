@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111311" />
+    <base href="/" />
+    <script src="@Assets["preferences.js"]"></script>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["BeastContest.Web.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet @rendermode="new InteractiveServerRenderMode(prerender: true)" />
+</head>
+<body>
+    <Routes @rendermode="new InteractiveServerRenderMode(prerender: true)" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+</html>
+

@@ -1,0 +1,71 @@
+@attribute [Authorize(Roles="Admin")]
+@page "/contests/{Id:guid}"
+@inherits LocalizedComponent
+@inject ContestStore Store
+@inject ProblemStore Problems
+@inject ICurrentActor Actor
+<PageTitle>@(_contest is null?Ui["contests.title"]:Ui.Text(_contest.Title)) · BeastContest</PageTitle>
+<a class="back-link" href="/"><Icon Name="back"/>@Ui["common.back"]</a>
+@if(_loading){<p>@Ui["common.loading"]</p>}
+else if(_error){<div class="notice">@Ui["common.error"]</div>}
+else if(_contest is null){<h1>@Ui["common.notfound"]</h1>}
+else{
+<div class="page-heading detail-heading"><div><div class="eyebrow">@Ui["status."+_contest.Status] / @Ui.Scoring(_contest.Scoring)</div><h1>@Ui.Text(_contest.Title)</h1><p>@Ui.Text(_contest.Description)</p></div><div class="large-symbol"><Icon Name="trophy"/></div></div>
+@if(_contest.IsDemo){<div class="notice"><Icon Name="info"/><span>@Ui["common.demoNotice"]</span></div>}
+else if(_contest.Status==ContestStatus.Draft){<div class="notice"><Icon Name="info"/><span>@Ui["common.draftNotice"]</span></div>}
+@if(_errors.Length>0){<div class="validation" role="alert">@foreach(var error in _errors){<p>@Ui[error]</p>}</div>}
+<div class="contest-actions">
+@if(_admin&&!_contest.IsDemo){
+    @if(_contest.Status==ContestStatus.Draft){<div><button class="button primary" disabled="@_busy" @onclick="()=>ChangeStateAsync(true)"><Icon Name="arrow"/>@Ui["contest.start"]</button><p class="field-hint">@Ui["contest.startHint"]</p></div>}
+    @if(_contest.Status==ContestStatus.Running){
+        @if(!_confirmFinish){<button class="button secondary" @onclick="()=>_confirmFinish=true">@Ui["contest.finish"]</button>}
+        else{<div class="notice"><span>@Ui["contest.confirmFinish"]</span><button class="button primary" disabled="@_busy" @onclick="()=>ChangeStateAsync(false)">@Ui["contest.finishNow"]</button><button class="button secondary" @onclick="()=>_confirmFinish=false">@Ui["common.cancel"]</button></div>}
+    }
+}
+@if(_contest.Status==ContestStatus.Running){<a class="button secondary" href="@($"/contests/{Id}/standings")">@Ui["standings.title"]</a>}
+@if(_contest.Status==ContestStatus.Finished){<a class="button primary" href="@($"/standings?contest={Id}")"><Icon Name="trophy"/>@Ui["contest.results"]</a>}
+</div>
+@if(_admin&&!_contest.IsDemo){
+    <section class="panel form-panel contest-members"><h2>@Ui["enrollment.title"]</h2><ParticipantPicker Selected="_participants"/><button class="button secondary" disabled="@_busy" @onclick="SaveParticipants">@Ui["enrollment.save"]</button>
+    @if(_saved){<p role="status">@Ui["enrollment.saved"]</p>}
+    @if(_contest.Status is ContestStatus.Draft or ContestStatus.Scheduled){<h2>@Ui["schedule.title"]</h2><ContestScheduleInput @bind-Value="_scheduledStart"/><button class="button primary" disabled="@(_busy||_scheduledStart is null)" @onclick="Schedule">@Ui["schedule.save"]</button>}
+    </section>
+}
+<div class="detail-grid"><section class="panel"><div class="panel-title"><h2>@Ui["detail.tasks"]</h2><span class="count">@_contest.ProblemIds.Length</span></div>
+@for(var i=0;i<_contest.ProblemIds.Length;i++){var id=_contest.ProblemIds[i];var problem=_problems.FirstOrDefault(p=>p.Id==id);if(problem is not null){<a class="problem-row" href="@($"/problems/{id}")"><span class="problem-letter">@DemoCatalog.Number(i)</span><div class="problem-row-text"><strong>@Ui.Text(problem.Title)</strong><small>@problem.TimeMs ms · @problem.MemoryMb @Ui["detail.memoryUnit"]</small></div><span class="difficulty @problem.Difficulty">@Ui["level."+problem.Difficulty]</span><Icon Name="arrow"/></a>}}
+@if(_contest.ProblemIds.Length==0){<div class="empty"><h3>@Ui["common.none"]</h3><a class="button secondary" href="/admin/contests/new">@Ui["home.create"]</a></div>}
+</section><aside class="panel rules-panel"><h2>@Ui["detail.rules"]</h2><label>@Ui["detail.format"]</label><strong>@Ui.Scoring(_contest.Scoring)</strong><p>@Ui[_contest.Scoring==ScoringMode.Icpc?"scoring.icpcHint":"scoring.pointsHint"]</p><div class="rule-facts"><span>@Ui["contests.duration"]<b>@_contest.DurationMinutes @Ui["common.minutes"]</b></span><span>@Ui["contests.capacity"]<b>@_contest.ParticipantLimit</b></span></div>
+@if(_contest.StartsAt is not null){<label>@Ui["contest.started"]</label><p>@_contest.StartsAt.Value.ToString("yyyy-MM-dd HH:mm")</p><label>@Ui["contest.ended"]</label><p>@_contest.EndsAt?.ToString("yyyy-MM-dd HH:mm")</p>}
+<label>@Ui["detail.languages"]</label><div class="chips">@foreach(var language in _contest.Languages){<span class="chip">@language</span>}</div><p class="small">@Ui["detail.languagesHint"]</p></aside></div>
+}
+@code{
+    [Parameter]public Guid Id{get;set;}
+    private List<string> _participants=[];private DateTimeOffset? _scheduledStart;private bool _saved;
+    private Contest? _contest;private Problem[] _problems=[];private bool _loading=true,_error,_admin,_busy,_confirmFinish;private string[] _errors=[];
+    protected override async Task OnParametersSetAsync()=>await LoadAsync();
+    private async Task LoadAsync(){
+        _loading=true;_error=false;
+        try{_admin=(await Actor.GetAsync()).IsAdmin;_contest=(await Store.GetAllAsync()).FirstOrDefault(c=>c.Id==Id);_problems=await Problems.GetAllAsync();_participants=(_contest?.ParticipantIds??[]).ToList();_scheduledStart=_contest?.StartsAt;}
+        catch(Exception ex) when(ex is System.Data.Common.DbException or InvalidOperationException){_error=true;}
+        finally{_loading=false;}
+    }
+    private async Task SaveParticipants(){
+        if(_busy)return;_busy=true;_errors=[];_saved=false;
+        try{await Store.SetParticipantsAsync(Id,_participants.ToArray());_saved=true;}
+        catch(DomainException ex){_errors=ex.Keys;}catch(UnauthorizedAccessException){_errors=["auth.denied"];}catch(System.Data.Common.DbException){_errors=["common.error"];}
+        finally{_busy=false;}
+    }
+    private async Task Schedule(){
+        if(_busy||_scheduledStart is null)return;_busy=true;_errors=[];
+        try{await Store.ScheduleAsync(Id,_scheduledStart.Value);await LoadAsync();}
+        catch(DomainException ex){_errors=ex.Keys;}catch(UnauthorizedAccessException){_errors=["auth.denied"];}catch(System.Data.Common.DbException){_errors=["common.error"];}
+        finally{_busy=false;}
+    }
+    private async Task ChangeStateAsync(bool start){
+        if(_busy)return;_busy=true;_errors=[];
+        try{if(start)await Store.StartAsync(Id);else await Store.FinishAsync(Id);_confirmFinish=false;await LoadAsync();}
+        catch(DomainException ex){_errors=ex.Keys;}catch(UnauthorizedAccessException){_errors=["auth.denied"];}
+        finally{_busy=false;}
+    }
+}
+

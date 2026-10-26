@@ -1,0 +1,80 @@
+@inherits LocalizedComponent
+@* Shared by the create and edit pages. Validation, PDF uploads and save errors are handled here. *@
+<form @onsubmit="SaveAsync" @onsubmit:preventDefault class="problem-form form-stack">
+@if(_errors.Length>0){<div role="alert" class="validation"><ul>@foreach(var key in _errors){<li>@Ui[key]</li>}</ul></div>}
+<section class="panel form-panel"><div class="section-heading"><span class="step">01</span><div><h2>@Ui["admin.basics"]</h2><p>@Ui["problem.translationHint"]</p></div></div>
+<div class="form-two"><div><label for="problem-title-ru">@Ui["problem.titleRu"]</label><input id="problem-title-ru" maxlength="100" @bind="Draft.TitleRu" @bind:event="oninput"/></div><div><label for="problem-title-en">@Ui["problem.titleEn"]</label><input id="problem-title-en" maxlength="100" @bind="Draft.TitleEn" @bind:event="oninput"/></div></div></section>
+<section class="panel form-panel"><div class="section-heading"><span class="step">02</span><div><h2>@Ui["problem.statement"]</h2><p>@Ui["problem.textHint"]</p></div></div>
+<div class="translation-columns"><div class="translation-block"><span class="badge badge-green">RU</span>
+<label for="statement-ru">@Ui["problem.statementRu"]</label><textarea id="statement-ru" rows="7" maxlength="20000" @bind="Draft.StatementRu" @bind:event="oninput"></textarea>
+<label for="input-ru">@Ui["problem.inputRu"]</label><textarea id="input-ru" rows="3" maxlength="20000" @bind="Draft.InputRu" @bind:event="oninput"></textarea>
+<label for="output-ru">@Ui["problem.outputRu"]</label><textarea id="output-ru" rows="3" maxlength="20000" @bind="Draft.OutputRu" @bind:event="oninput"></textarea>
+<label for="pdf-ru">@Ui["problem.pdfRu"]</label><InputFile id="pdf-ru" OnChange="e=>UploadAsync(e,true)" accept=".pdf,application/pdf" disabled="@_uploading" />
+@if(Draft.PdfRu is not null){<p class="field-hint">@Ui["problem.pdfReady"] · @(Draft.PdfRu.Length/1024) KB <button type="button" class="text-button" @onclick="()=>Draft.PdfRu=null">@Ui["problem.removePdf"]</button></p>}
+</div><div class="translation-block"><span class="badge badge-blue">EN</span>
+<label for="statement-en">@Ui["problem.statementEn"]</label><textarea id="statement-en" rows="7" maxlength="20000" @bind="Draft.StatementEn" @bind:event="oninput"></textarea>
+<label for="input-en">@Ui["problem.inputEn"]</label><textarea id="input-en" rows="3" maxlength="20000" @bind="Draft.InputEn" @bind:event="oninput"></textarea>
+<label for="output-en">@Ui["problem.outputEn"]</label><textarea id="output-en" rows="3" maxlength="20000" @bind="Draft.OutputEn" @bind:event="oninput"></textarea>
+<label for="pdf-en">@Ui["problem.pdfEn"]</label><InputFile id="pdf-en" OnChange="e=>UploadAsync(e,false)" accept=".pdf,application/pdf" disabled="@_uploading" />
+@if(Draft.PdfEn is not null){<p class="field-hint">@Ui["problem.pdfReady"] · @(Draft.PdfEn.Length/1024) KB <button type="button" class="text-button" @onclick="()=>Draft.PdfEn=null">@Ui["problem.removePdf"]</button></p>}
+</div></div><p class="field-hint">@Ui["problem.pdfHint"]</p>
+<div class="form-two"><div><label for="sample-input">@Ui["problem.sampleInput"]</label><textarea id="sample-input" rows="3" maxlength="20000" spellcheck="false" @bind="Draft.SampleInput" @bind:event="oninput"></textarea></div><div><label for="sample-output">@Ui["problem.sampleOutput"]</label><textarea id="sample-output" rows="3" maxlength="20000" spellcheck="false" @bind="Draft.SampleOutput" @bind:event="oninput"></textarea></div></div></section>
+<section class="panel form-panel"><div class="section-heading"><span class="step">03</span><h2>@Ui["problem.limits"]</h2></div>
+@if(Editing){<div class="notice"><Icon Name="info"/><span>@Ui["problem.editSnapshots"]</span></div>}
+<div class="form-two"><div><label for="time-limit">@Ui["problem.timeMs"]</label><input id="time-limit" type="number" min="100" max="30000" @bind="Draft.TimeMs" @bind:event="oninput"/></div><div><label for="memory-limit">@Ui["problem.memoryMb"]</label><input id="memory-limit" type="number" min="16" max="2048" @bind="Draft.MemoryMb" @bind:event="oninput"/></div></div>
+<label for="difficulty">@Ui["library.level"]</label><select id="difficulty" @bind="Draft.Difficulty">@foreach(var level in new[]{"easy","medium","hard"}){<option value="@level">@Ui["level."+level]</option>}</select>
+<label>@Ui["library.tags"]</label><div class="language-options">@foreach(var tag in DemoCatalog.Tags){<label class="option-chip"><input type="checkbox" checked="@Draft.Tags.Contains(tag)" @onchange="()=>ToggleTag(tag)"/><span>@Ui["tag."+tag]</span></label>}</div></section>
+<section class="panel form-panel"><div class="section-heading"><span class="step">04</span><div><h2>@Ui["checker.title"]</h2><p>@Ui["checker.hint"]</p></div></div>
+<label for="checker-mode">@Ui["checker.mode"]</label><select id="checker-mode" @bind="Draft.CheckerMode">@foreach(var mode in CheckerModes.All){<option value="@mode">@Ui["checker."+mode]</option>}</select>
+<p class="field-hint">@Ui["checker."+Draft.CheckerMode+"Hint"]</p>
+@if(Draft.CheckerMode==CheckerModes.Float){<label for="checker-epsilon">@Ui["checker.epsilon"]</label><input id="checker-epsilon" type="number" step="any" min="1e-12" max="1" @bind="Draft.CheckerEpsilon"/>}
+@if(Draft.CheckerMode==CheckerModes.Testlib){<label for="checker-source">@Ui["checker.source"]</label><textarea id="checker-source" class="code-editor" rows="14" spellcheck="false" maxlength="65536" @bind="Draft.CheckerSource" @bind:event="oninput" placeholder="@CheckerSample"></textarea>
+<label>@Ui["checker.file"] <InputFile OnChange="ReadCheckerAsync" accept=".cpp,.cc,.cxx" disabled="@_uploading"/></label>}
+</section>
+@if(ShowTests){<section class="panel form-panel"><div class="section-heading"><span class="step">05</span><div><h2>@Ui["tests.title"]</h2><p>@Ui["tests.creationHint"]</p></div></div>
+<TestEditor Tests="Draft.Tests" Disabled="@(_saving||_uploading||_testsUploading)" BusyChanged="value=>_testsUploading=value"/>
+</section>}
+<div class="form-actions"><a class="button secondary" href="@CancelHref">@Ui["common.cancel"]</a><button class="button primary" type="submit" disabled="@(_saving||_uploading||_testsUploading)"><Icon Name="@(Editing?"check":"plus")"/>@Ui[_saving?"admin.saving":Editing?"common.save":"problem.save"]</button></div>
+</form>
+@code {
+    [Parameter,EditorRequired] public ProblemDraft Draft {get;set;}=new();
+    [Parameter,EditorRequired] public Func<ProblemDraft,Task> Save {get;set;}=_=>Task.CompletedTask;
+    [Parameter] public bool ShowTests {get;set;}
+    [Parameter] public bool Editing {get;set;}
+    [Parameter] public string CancelHref {get;set;}="/problems";
+    private string[] _errors=[];
+    private bool _saving,_uploading,_testsUploading;
+    private const string CheckerSample="#include \"testlib.h\"\nint main(int argc, char* argv[]) {\n    registerTestlibCmd(argc, argv);\n    long long expected = ans.readLong(), got = ouf.readLong();\n    if (got != expected) quitf(_wa, \"expected %lld, found %lld\", expected, got);\n    quitf(_ok, \"correct\");\n}";
+    private void ToggleTag(string tag){if(!Draft.Tags.Remove(tag))Draft.Tags.Add(tag);}
+    private async Task UploadAsync(InputFileChangeEventArgs e,bool ru){
+        _uploading=true;_errors=[];
+        try{
+            var file=e.File;
+            if(!file.Name.EndsWith(".pdf",StringComparison.OrdinalIgnoreCase))throw new IOException();
+            await using var stream=file.OpenReadStream(ProblemDraft.MaxPdfBytes);
+            using var memory=new MemoryStream();await stream.CopyToAsync(memory);
+            var bytes=memory.ToArray();
+            if(!ProblemDraft.ValidPdf(bytes))throw new IOException();
+            if(ru)Draft.PdfRu=bytes;else Draft.PdfEn=bytes;
+        }catch(Exception ex) when(ex is IOException or InvalidOperationException){_errors=["problem.loadError"];}
+        finally{_uploading=false;}
+    }
+    private async Task ReadCheckerAsync(InputFileChangeEventArgs e){
+        _uploading=true;_errors=[];
+        try{
+            await using var stream=e.File.OpenReadStream(CheckerModes.MaxSourceBytes);
+            using var memory=new MemoryStream();await stream.CopyToAsync(memory);
+            Draft.CheckerSource=new System.Text.UTF8Encoding(false,true).GetString(memory.ToArray()).TrimStart('﻿');
+        }catch(Exception ex) when(ex is IOException or InvalidOperationException or System.Text.DecoderFallbackException){_errors=["checker.sourceInvalid"];}
+        finally{_uploading=false;}
+    }
+    private async Task SaveAsync(){
+        if(_saving||_uploading||_testsUploading)return;_errors=Draft.Validate();if(_errors.Length>0)return;_saving=true;
+        try{await Save(Draft);}
+        catch(DomainException ex){_errors=ex.Keys;}
+        catch(UnauthorizedAccessException){_errors=["auth.denied"];}
+        catch(Microsoft.EntityFrameworkCore.DbUpdateException){_errors=["admin.saveError"];}
+        catch(System.Data.Common.DbException){_errors=["admin.saveError"];}
+        finally{_saving=false;}
+    }
+}

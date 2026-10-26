@@ -1,0 +1,15 @@
+@inherits LocalizedComponent
+<div class="form-two schedule-input">
+    <label>@Ui["schedule.date"]<input type="datetime-local" value="@_local" @onchange="ChangeDate"/></label>
+    <label>@Ui["schedule.zone"]<select value="@_offset" @onchange="ChangeZone">@for(var i=-12;i<=14;i++){<option value="@i">UTC@(i>=0?"+":"")@i.ToString("00") : 00</option>}</select></label>
+</div>
+<p class="field-hint">@Ui["schedule.hint"]</p>
+@code{
+    [Parameter] public DateTimeOffset? Value{get;set;}
+    [Parameter] public EventCallback<DateTimeOffset?> ValueChanged{get;set;}
+    private string _local="";private int _offset=5;private DateTimeOffset? _seen;
+    protected override void OnParametersSet(){if(Value!=_seen){_seen=Value;_local=Value?.ToOffset(TimeSpan.FromHours(_offset)).ToString("yyyy-MM-ddTHH:mm")??"";}}
+    private async Task ChangeDate(ChangeEventArgs e){_local=e.Value?.ToString()??"";await Emit();}
+    private async Task ChangeZone(ChangeEventArgs e){if(int.TryParse(e.Value?.ToString(),out var offset)&&offset is >=-12 and <=14){_offset=offset;await Emit();}}
+    private async Task Emit(){DateTimeOffset? value=DateTime.TryParseExact(_local,"yyyy-MM-ddTHH:mm",System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.None,out var local)?new DateTimeOffset(DateTime.SpecifyKind(local,DateTimeKind.Unspecified),TimeSpan.FromHours(_offset)):null;_seen=value;await ValueChanged.InvokeAsync(value);}
+}

@@ -1,0 +1,84 @@
+@page "/admin/judge"
+@attribute [Authorize(Roles="Admin")]
+@inherits LocalizedComponent
+@inject JudgeMonitorStore Store
+@inject ContestStore Contests
+@inject RejudgeStore Rejudges
+@inject LiveEvents Live
+<PageTitle>@Ui["queue.title"] &#183; BeastContest</PageTitle>
+<div class="page-heading"><h1>@Ui["queue.title"]</h1><p>@Ui["queue.subtitle"]</p></div>
+@if(_error){<div class="notice" role="alert">@Ui["common.error"]</div>}
+@if(_data is null){<p>@Ui["common.loading"]</p>}
+else{
+    <div class="queue-stats">
+        <section class="panel"><span>@Ui["judge.Queued"]</span><strong>@_data.Queued</strong></section>
+        <section class="panel"><span>@Ui["judge.Running"]</span><strong>@_data.Running</strong></section>
+        <section class="panel"><span>@Ui["queue.expired"]</span><strong>@_data.Expired</strong></section>
+        <section class="panel"><span>@Ui["queue.errors"]</span><strong>@_data.Errors</strong></section>
+    </div>
+    <section class="panel queue-panel"><div class="panel-title"><h2>Worker</h2><span class="small">@Ui["queue.heartbeat"]</span></div>
+    @if(!_data.Workers.Any(w=>w.Online)){<div class="notice">@Ui["queue.offlineHint"]</div>}
+    @foreach(var worker in _data.Workers){<div class="worker-row"><span class="badge @(worker.Online&&worker.State!="Error"?"badge-green":"")">@Ui[worker.Online?"queue."+worker.State:"queue.Offline"]</span><code>@worker.Id</code><span>@worker.LastSeen.ToString("dd.MM HH:mm:ss") UTC</span>@if(worker.SubmissionId is {} id){<code>@id.ToString("N")[..8]</code>}<small>@worker.Image</small></div>}
+    </section>
+    <section class="panel queue-panel"><div class="panel-title"><h2>@Ui["queue.submissions"]</h2><button class="button secondary" @onclick="LoadAsync">@Ui["judge.refresh"]</button></div>
+    <div class="queue-filters">
+        <label>@Ui["queue.status"]<select @bind="_status" @bind:after="LoadAsync"><option value="">@Ui["queue.all"]</option>@foreach(var status in Statuses){<option value="@status">@Ui["judge."+status]</option>}</select></label>
+        <label>@Ui["problem.language"]<select @bind="_language" @bind:after="LoadAsync"><option value="">@Ui["queue.all"]</option>@foreach(var language in DemoCatalog.Languages){<option>@language</option>}</select></label>
+        <label>@Ui["judge.contest"]<select @bind="_contest" @bind:after="LoadAsync"><option value="">@Ui["queue.all"]</option>@foreach(var contest in _contests){<option value="@contest.Id">@Ui.Text(contest.Title)</option>}</select></label>
+    </div>
+    <button class="button secondary" disabled="@(!Guid.TryParse(_contest,out _))" @onclick="BeginContest">@Ui["rejudge.contestButton"]</button>
+    @if(_request is not null){
+        <section class="panel queue-panel" aria-label="@Ui["rejudge.title"]">
+            <h3>@Ui["rejudge.title"]</h3>
+            <p>@(_targetSubmission is {} selected ? selected.ToString() : Ui.Text(_contests.Single(c=>c.Id==_targetContest).Title))</p>
+            <p>@Ui["rejudge.warning"]</p>
+            @if(_targetContest is not null){<label>@Ui["rejudge.tests"]<select @bind="_testMode" disabled="@_busy"><option value="saved">@Ui["rejudge.original"]</option><option value="latest">@Ui["rejudge.latest"]</option></select></label>}
+            else{<p>@Ui["rejudge.original"]</p>}
+            <label>@Ui["rejudge.reason"]<textarea @bind="_reason" @bind:event="oninput" maxlength="500" disabled="@_busy"></textarea></label>
+            @if(_rejudgeError is not null){<p role="alert">@Ui[_rejudgeError]</p>}
+            <button class="button primary" disabled="@_busy" @onclick="ConfirmRejudge">@Ui["rejudge.confirm"]</button>
+            <button class="button secondary" disabled="@_busy" @onclick="CancelRejudge">@Ui["rejudge.cancel"]</button>
+        </section>
+    }
+    @if(_rejudged is {} count){<p role="status">@Ui["rejudge.done"] @count</p>}
+    @if(_data.Items.Length==0){<div class="empty">@Ui["judge.empty"]</div>}
+    else{<div class="table-scroll"><table><thead><tr><th>ID / UTC</th><th>@Ui["standings.participant"]</th><th>@Ui["nav.problems"]</th><th>@Ui["problem.language"]</th><th>@Ui["queue.status"]</th><th>@Ui["queue.tests"]</th><th>@Ui["judge.score"]</th><th>@Ui["queue.attempts"]</th><th>@Ui["rejudge.title"]</th></tr></thead><tbody>
+    @foreach(var item in _data.Items){<tr><td><code title="@item.Id">@item.Id.ToString("N")[..8]</code><br/><small>@item.CreatedAt.ToString("dd.MM HH:mm:ss")</small></td><td>@item.UserName</td><td><a href="@("/problems/"+item.ProblemId)">@item.ProblemId</a></td><td>@item.Language</td><td>@Ui["judge."+item.Status]@if(!string.IsNullOrWhiteSpace(item.Diagnostic)){<details><summary>@Ui["queue.diagnostic"]</summary><pre>@item.Diagnostic</pre></details>}</td><td>@item.Passed / @item.Total@{var codes=item.TestCodes;}@if(codes.Length>0){<div class="test-codes" aria-label="@Ui["queue.perTest"]">@for(var i=0;i<codes.Length;i++){var code=codes[i];<span class="@(code=="AC"?"ok":"")" title="@($"{Ui["tests.case"]} {i+1}")">@(code.Length==0?"·":code)</span>}</div>}</td><td>@item.Score</td><td>@item.Attempts</td><td><button class="button secondary" disabled="@_busy" @onclick="()=>BeginSubmission(item.Id)">@Ui["rejudge.single"]</button></td></tr>}
+    </tbody></table></div>}
+    <p class="small">@Ui["queue.limit"]</p></section>
+    <section class="panel queue-panel"><h2>@Ui["rejudge.history"]</h2><p class="small">@Ui["rejudge.historyHint"]</p>
+    @foreach(var entry in _history){<div class="worker-row"><span>@entry.CreatedAt.ToString("dd.MM HH:mm:ss") UTC</span><strong>@entry.AdminName</strong><code title="@entry.Id">@(entry.SubmissionId?.ToString()??entry.ContestId?.ToString())</code><span>@entry.Count &#183; @Ui[entry.UpdatedTests?"rejudge.latest":"rejudge.original"]</span><span>@entry.Reason</span></div>}
+    </section>
+}
+@code{
+    private Guid? _request,_targetSubmission,_targetContest;
+    private bool _busy;private string _testMode="saved";
+    private string _reason="";private string? _rejudgeError;private int? _rejudged;
+    private RejudgeLog[] _history=[];
+    private void BeginSubmission(Guid id){if(_busy)return;Begin(id,null);}
+    private void BeginContest(){if(!_busy&&Guid.TryParse(_contest,out var id))Begin(null,id);}
+    private void Begin(Guid? submission,Guid? contest){_targetSubmission=submission;_targetContest=contest;_request=Guid.NewGuid();_reason="";_testMode="saved";_rejudgeError=null;_rejudged=null;}
+    private void CancelRejudge(){if(!_busy)_request=null;}
+    private async Task ConfirmRejudge(){
+        if(_busy||_request is null)return;_busy=true;_rejudgeError=null;
+        try{_rejudged=await Rejudges.RunAsync(_request.Value,_targetSubmission,_targetContest,_testMode=="latest",_reason);_request=null;await LoadAsync();}
+        catch(DomainException ex){_rejudgeError=ex.Message;}
+        catch(System.Data.Common.DbException){_rejudgeError="common.error";}
+        finally{_busy=false;}
+    }
+    private JudgeMonitor? _data;private bool _error;private string _status="",_language="",_contest="";
+    private Contest[] _contests=[];private readonly CancellationTokenSource _stop=new();
+    private static readonly string[] Statuses=["Queued","Running","Accepted","WrongAnswer","CompilationError","RuntimeError","TimeLimitExceeded","MemoryLimitExceeded","OutputLimitExceeded","SystemError"];
+    protected override async Task OnInitializedAsync(){_contests=(await Contests.GetAllAsync()).Where(c=>!c.IsDemo).ToArray();await LoadAsync();}
+    private IDisposable? _live;
+    protected override Task OnAfterRenderAsync(bool firstRender){
+        if(firstRender){
+            _live=Live.Subscribe(e=>e.Kind is "submission" or "rejudge" or "resync",()=>InvokeAsync(async()=>{if(_busy)return;await LoadAsync();StateHasChanged();}));
+            _=PollAsync();
+        }
+        return Task.CompletedTask;
+    }
+    private async Task LoadAsync(){try{_data=await Store.GetAsync(_status,_language,Guid.TryParse(_contest,out var id)?id:null);_history=await Rejudges.HistoryAsync();_error=false;}catch(System.Data.Common.DbException){_error=true;}}
+    private async Task PollAsync(){try{using var timer=new PeriodicTimer(TimeSpan.FromSeconds(10));while(await timer.WaitForNextTickAsync(_stop.Token))await InvokeAsync(async()=>{await LoadAsync();StateHasChanged();});}catch(OperationCanceledException){}catch(UnauthorizedAccessException){}}
+    public override void Dispose(){_live?.Dispose();_stop.Cancel();base.Dispose();}
+}

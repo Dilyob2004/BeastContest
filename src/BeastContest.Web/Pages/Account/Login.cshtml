@@ -1,0 +1,13 @@
+@page "/account/login"
+@model BeastContest.Web.Pages.Account.LoginModel
+@{ Layout="_AuthLayout"; ViewData["Title"]=Model.T("auth.signIn"); }
+<div class="auth-heading"><div class="eyebrow">BEAST / ACCOUNT</div><h1>@Model.T("auth.welcome")</h1><p>@Model.T("auth.loginHint")</p></div>
+<form method="post" class="panel form-panel auth-form">
+
+@if(Model.Errors.Length>0){<div role="alert" class="validation">@foreach(var error in Model.Errors){<p>@Model.T(error)</p>}</div>}
+<label asp-for="Login">@Model.T("auth.login")</label><input asp-for="Login" autocomplete="username" required maxlength="40"/>
+<label asp-for="Password">@Model.T("auth.password")</label><input asp-for="Password" type="password" autocomplete="current-password" required maxlength="128"/>
+<button type="submit" class="button primary full">@Model.T("auth.signIn") →</button>
+<p class="small">@Model.T("auth.noRegistration")</p>
+</form>
+

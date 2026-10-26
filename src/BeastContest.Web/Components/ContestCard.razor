@@ -1,0 +1,15 @@
+@inherits LocalizedComponent
+<article class="contest-card">
+    <div class="card-top"><span class="badge @(Contest.IsDemo ? "badge-green" : "badge-blue")">@Ui[Contest.IsDemo ? "contests.demoBadge" : "status." + Contest.Status]</span><span class="card-format">@(Contest.Scoring == ScoringMode.Icpc ? "ICPC" : Ui["scoring.points"])</span></div>
+    <div class="card-symbol"><Icon Name="@(Contest.Scoring == ScoringMode.Icpc ? "trophy" : "code")" /></div>
+    <h3><a href="@($"/contests/{Contest.Id}")">@Ui.Text(Contest.Title)</a></h3>
+    <p class="card-description">@Ui.Text(Contest.Description)</p>
+    <div class="card-metrics">
+        <span><Icon Name="book" /> @Contest.ProblemIds.Length <small>@Ui["contests.problems"]</small></span>
+        <span><Icon Name="clock" /> @Contest.DurationMinutes <small>@Ui["common.minutes"]</small></span>
+        <span><Icon Name="users" /> @Contest.ParticipantLimit</span>
+    </div>
+    <a class="card-link" href="@($"/contests/{Contest.Id}")">@Ui["contests.open"] <Icon Name="arrow" /></a>
+</article>
+@code { [Parameter, EditorRequired] public Contest Contest { get; set; } = default!; }
+

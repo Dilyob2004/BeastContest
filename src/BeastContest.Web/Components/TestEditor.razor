@@ -1,0 +1,77 @@
+@inherits LocalizedComponent
+<div class="test-editor">
+    @if(_error is not null){<div class="validation" role="alert">@Ui[_error]</div>}
+    <div class="test-tools">
+        <strong>@Ui["tests.count"]: @Tests.Count / 100</strong>
+        <p class="muted">@Ui["tests.editorHint"]</p>
+        <details><summary>@Ui["tests.import"]</summary><label>@Ui["tests.import"]<InputFile accept=".json,application/json" OnChange="ImportAsync" disabled="@Locked"/></label><p class="muted">@Ui["tests.importHint"]</p><pre>[{"Input":"2 3\n","Output":"5\n","Points":1,"Group":""}]</pre></details>
+        <details><summary>@Ui["tests.zipImport"]</summary><label>@Ui["tests.zipImport"]<InputFile accept=".zip,application/zip" OnChange="ImportZipAsync" disabled="@Locked"/></label><p class="muted">@Ui["tests.zipHint"]</p><pre>01.in + 01.out · 01 + 01.a · input/01.txt + output/01.txt · input01.txt + output01.txt</pre></details>
+        <p class="muted">@Ui["tests.pointsHint"] @Ui["tests.pointsTotalLabel"]: @Tests.Sum(t=>(long)t.Points)</p>
+    </div>
+    @for(var i=0;i<Tests.Count;i++){
+        var test=Tests[i];var number=i+1;
+        <section class="panel test-card" @key="test">
+            <div class="panel-title"><h2>@Ui["tests.case"] @number</h2><button type="button" class="text-button" disabled="@Locked" @onclick="()=>RemoveAsync(test)">@Ui["tests.remove"]</button></div>
+            <div class="form-two test-scoring">
+                <label>@Ui["tests.points"]<input type="number" min="0" max="@TestScoring.MaxPoints" aria-label="@($"{Ui["tests.case"]} {number}: {Ui["tests.points"]}")" @bind="test.Points" @bind:event="oninput" @bind:after="NotifyAsync" disabled="@Locked"/></label>
+                <label>@Ui["tests.group"]<input maxlength="@TestScoring.MaxGroupLength" pattern="[A-Za-z0-9_\-]*" placeholder="@Ui["tests.groupPlaceholder"]" aria-label="@($"{Ui["tests.case"]} {number}: {Ui["tests.group"]}")" @bind="test.Group" @bind:event="oninput" @bind:after="NotifyAsync" disabled="@Locked"/></label>
+            </div>
+            <div class="test-columns">
+                <div><label>@Ui["problem.input"]<textarea aria-label="@($"{Ui["tests.case"]} {number}: {Ui["problem.input"]}")" rows="5" spellcheck="false" @bind="test.Input" @bind:event="oninput" @bind:after="NotifyAsync" disabled="@Locked"></textarea></label><label class="test-file">@Ui["tests.inputTxt"]<InputFile aria-label="@($"{Ui["tests.case"]} {number}: {Ui["tests.inputTxt"]}")" accept=".txt,text/plain" OnChange="e=>UploadAsync(e,test,true)" disabled="@Locked"/></label></div>
+                <div><label>@Ui["tests.output"]<textarea aria-label="@($"{Ui["tests.case"]} {number}: {Ui["tests.output"]}")" rows="5" spellcheck="false" @bind="test.Output" @bind:event="oninput" @bind:after="NotifyAsync" disabled="@Locked"></textarea></label><label class="test-file">@Ui["tests.outputTxt"]<InputFile aria-label="@($"{Ui["tests.case"]} {number}: {Ui["tests.outputTxt"]}")" accept=".txt,text/plain" OnChange="e=>UploadAsync(e,test,false)" disabled="@Locked"/></label></div>
+            </div>
+        </section>
+    }
+    @if(Tests.Count==0){<p class="empty">@Ui["tests.empty"]</p>}
+    <button type="button" class="button secondary" disabled="@(Locked||Tests.Count>=100)" @onclick="AddAsync"><Icon Name="plus"/>@Ui["tests.add"]</button>
+</div>
+@code{
+    [Parameter,EditorRequired] public List<TestCaseDraft> Tests {get;set;}=[];
+    [Parameter] public bool Disabled {get;set;}
+    [Parameter] public EventCallback Changed {get;set;}
+    [Parameter] public EventCallback<bool> BusyChanged {get;set;}
+    private bool _busy;
+    private string? _error;
+    private bool Locked=>Disabled||_busy;
+    private async Task NotifyAsync(){_error=null;await Changed.InvokeAsync();}
+    private async Task AddAsync(){if(Locked||Tests.Count>=100)return;Tests.Add(new());await NotifyAsync();}
+    private async Task RemoveAsync(TestCaseDraft test){if(Locked)return;Tests.Remove(test);await NotifyAsync();}
+    private async Task SetBusyAsync(bool value){_busy=value;await BusyChanged.InvokeAsync(value);}
+    private async Task UploadAsync(InputFileChangeEventArgs args,TestCaseDraft test,bool input){
+        if(Locked)return;await SetBusyAsync(true);_error=null;
+        try{
+            var file=args.File;
+            await using var stream=file.OpenReadStream(TestSuiteStore.MaxTextBytes);
+            using var memory=new MemoryStream();await stream.CopyToAsync(memory);
+            var text=TestSuiteStore.ParseText(file.Name,memory.ToArray());
+            var candidate=Tests.Select(t=>new TestCaseDraft{Input=ReferenceEquals(t,test)&&input?text:t.Input,Output=ReferenceEquals(t,test)&&!input?text:t.Output,Points=t.Points,Group=t.Group}).ToArray();
+            TestSuiteStore.Validate(candidate);
+            if(input)test.Input=text;else test.Output=text;
+            await NotifyAsync();
+        }catch(DomainException ex){_error=ex.Keys[0];}
+        catch(Exception ex) when(ex is IOException or InvalidOperationException){_error="tests.txtInvalid";}
+        finally{await SetBusyAsync(false);}
+    }
+    private async Task ImportZipAsync(InputFileChangeEventArgs args){
+        if(Locked)return;await SetBusyAsync(true);_error=null;
+        try{
+            await using var stream=args.File.OpenReadStream(TestSuiteStore.MaxZipBytes);
+            using var memory=new MemoryStream();await stream.CopyToAsync(memory);
+            var imported=TestSuiteStore.ParseZip(memory.ToArray());
+            Tests.Clear();Tests.AddRange(imported);await NotifyAsync();
+        }catch(DomainException ex){_error=ex.Keys[0];}
+        catch(Exception ex) when(ex is IOException or InvalidOperationException){_error="tests.zipInvalid";}
+        finally{await SetBusyAsync(false);}
+    }
+    private async Task ImportAsync(InputFileChangeEventArgs args){
+        if(Locked)return;await SetBusyAsync(true);_error=null;
+        try{
+            await using var stream=args.File.OpenReadStream(TestSuiteStore.MaxFileBytes);
+            using var reader=new StreamReader(stream,new System.Text.UTF8Encoding(false,true));
+            var imported=TestSuiteStore.Parse(await reader.ReadToEndAsync());
+            Tests.Clear();Tests.AddRange(imported);await NotifyAsync();
+        }catch(DomainException ex) when(ex.Keys[0] is "tests.pointsInvalid" or "tests.pointsTotal"){_error=ex.Keys[0];}
+        catch(Exception ex) when(ex is IOException or InvalidOperationException or System.Text.DecoderFallbackException or DomainException){_error="tests.invalid";}
+        finally{await SetBusyAsync(false);}
+    }
+}

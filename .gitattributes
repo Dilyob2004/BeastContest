@@ -1,0 +1,2 @@
+# Keep files byte-for-byte as written (mixed CRLF/LF sources).
+* -text

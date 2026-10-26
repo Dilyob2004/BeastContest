@@ -1,0 +1,20 @@
+@inherits LocalizedComponent
+@inject AccountService Accounts
+<div class="participant-picker">
+    <p class="field-hint">@Ui["enrollment.hint"]</p>
+    @if(_error){<p class="validation">@Ui["common.error"]</p>}
+    @foreach(var user in _users){
+        <label class="check-problem"><input type="checkbox" checked="@Selected.Contains(user.Id)" @onchange="()=>Toggle(user.Id)"/><span>@user.DisplayName <small>@@@user.Login</small></span></label>
+    }
+    @foreach(var id in Selected.Where(id=>!_users.Any(u=>u.Id==id)).ToArray()){
+        <label class="check-problem"><input type="checkbox" checked @onchange="()=>Toggle(id)"/><span>@Ui["enrollment.unavailable"]</span></label>
+    }
+    @if(!_error&&_users.Length==0){<p>@Ui["enrollment.empty"]</p>}
+    <p class="small">@Ui["enrollment.selected"]: @Selected.Count</p>
+</div>
+@code{
+    [Parameter,EditorRequired] public List<string> Selected{get;set;}=[];
+    private AccountSummary[] _users=[];private bool _error;
+    protected override async Task OnInitializedAsync(){try{_users=(await Accounts.GetAllAsync()).Where(u=>u.Role=="Participant"&&!u.Disabled).ToArray();}catch(Exception ex) when(ex is UnauthorizedAccessException or System.Data.Common.DbException){_error=true;}}
+    private void Toggle(string id){if(!Selected.Remove(id))Selected.Add(id);}
+}
