@@ -218,6 +218,13 @@ try{
     Check(true,"Unpaired, duplicate, oversized and corrupt archives are rejected.");
     Check(new ProblemDraft{TitleRu="x",StatementRu="y",CheckerMode=CheckerModes.Testlib}.Validate().Contains("checker.sourceInvalid")&&new ProblemDraft{TitleRu="x",StatementRu="y",CheckerMode=CheckerModes.Float,CheckerEpsilon=0}.Validate().Contains("checker.epsilonInvalid")&&new ProblemDraft{TitleRu="x",StatementRu="y",CheckerMode="shell"}.Validate().Contains("checker.invalidMode"),"Checker settings are validated.");
     {
+        var now=DateTimeOffset.UtcNow;
+        Contest Make(DateTimeOffset? start,int minutes=60)=>new(Guid.NewGuid(),new("c","c"),new("",""),ScoringMode.Icpc,minutes,10,["Python"],["sum"],false,now.AddDays(-3),start,start?.AddMinutes(minutes));
+        var finished=Make(now.AddDays(-2));var draftContest=Make(null);var upcoming=Make(now.AddDays(1));var running=Make(now.AddMinutes(-5));
+        Check(ParticipantAccess.Current([draftContest,finished])==finished&&ParticipantAccess.Open(ParticipantAccess.Current([draftContest,finished])),"An unannounced draft does not hide a finished contest from its participants.");
+        Check(ParticipantAccess.Current([draftContest])==draftContest&&!ParticipantAccess.Open(draftContest)&&ParticipantAccess.Current([finished,upcoming,draftContest])==upcoming&&ParticipantAccess.Current([finished,upcoming,running])==running,"Running, scheduled, finished and draft contests keep their access priority.");
+    }
+    {
         var adminProblems=new ProblemStore(factory,adminActor);
         var editable=await adminProblems.CreateAsync(new ProblemDraft{TitleRu="Редактируемая",StatementRu="text",Tests=[new(){Input="1\n",Output="1\n"}]});
         var pendingContest=await contestStore.CreateAsync(new(){Title="Scheduled snapshot check",Languages=["Python"],ProblemIds=[editable.Id],DurationMinutes=60,ParticipantLimit=10,StartsAt=DateTimeOffset.UtcNow.AddDays(1)});
