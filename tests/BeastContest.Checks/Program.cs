@@ -260,6 +260,14 @@ try{
     var queuedMonitor=await monitor.GetAsync("Queued","Python",contest.Id);
     Check(queuedMonitor.Queued==3&&queuedMonitor.Items.Length==3&&queuedMonitor.Items.All(s=>s.ContestId==contest.Id&&s.Language=="Python"),"Admin queue filters show matching submissions and global counts.");
     Check((await monitor.GetAsync("Accepted","Java",contest.Id)).Items.Length==0,"Admin queue filters exclude unrelated submissions.");
+    {
+        // An organizer testing a running contest must not appear in its standings.
+        var adminTry=await new SubmissionStore(factory,adminActor).SubmitAsync(Guid.NewGuid(),problem.Id,contest.Id,"Python","print(5)");
+        await using(var db=await factory.CreateDbContextAsync())await db.Submissions.Where(s=>s.Id==adminTry).ExecuteUpdateAsync(s=>s.SetProperty(x=>x.Status,"Accepted").SetProperty(x=>x.Passed,2).SetProperty(x=>x.Score,100));
+        var withAdmin=await new StandingsStore(factory,adminActor,contestStore).GetViewAsync(contest.Id);
+        Check(withAdmin.Rows.Length>0&&withAdmin.Rows.All(r=>r.Name!=adminUser.DisplayName),"Administrator submissions are excluded from contest standings.");
+        await using(var db=await factory.CreateDbContextAsync())await db.Submissions.Where(s=>s.Id==adminTry).ExecuteDeleteAsync();
+    }
     if(args.Contains("--judge")){
         await using(var db=await factory.CreateDbContextAsync()){var abandoned=await db.Submissions.SingleAsync(s=>s.Id==submissionId);abandoned.Status="Running";abandoned.LeaseUntil=DateTimeOffset.UtcNow.AddMinutes(-2);abandoned.LeaseOwner="expired-test";await db.SaveChangesAsync();}
         var workerStart=new ProcessStartInfo("dotnet"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};

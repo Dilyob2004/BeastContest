@@ -43,11 +43,17 @@ public sealed class StandingsStore(IDbContextFactory<AppDbContext> factory,ICurr
         await LiveEvents.NotifyAsync(db,new("standings",null,id));
         await tx.CommitAsync();
     }
-    /// <summary>Only the columns the table needs: never source code or test snapshots.</summary>
-    private static Task<SubmissionEntity[]> LoadVerdictsAsync(AppDbContext db,Guid id)=>
-        db.Submissions.AsNoTracking().Where(s=>s.ContestId==id).OrderBy(s=>s.CreatedAt).ThenBy(s=>s.Id)
+    /// <summary>
+    /// Only the columns the table needs: never source code or test snapshots.
+    /// Administrators may test contest problems; their submissions never enter the standings.
+    /// Submissions of deleted accounts stay, as before.
+    /// </summary>
+    private static Task<SubmissionEntity[]> LoadVerdictsAsync(AppDbContext db,Guid id){
+        var admins=from link in db.UserRoles join role in db.Roles on link.RoleId equals role.Id where role.Name=="Admin" select link.UserId;
+        return db.Submissions.AsNoTracking().Where(s=>s.ContestId==id&&!admins.Contains(s.UserId)).OrderBy(s=>s.CreatedAt).ThenBy(s=>s.Id)
             .Select(s=>new SubmissionEntity{Id=s.Id,UserId=s.UserId,UserName=s.UserName,ProblemId=s.ProblemId,ContestId=s.ContestId,Status=s.Status,Passed=s.Passed,Total=s.Total,Score=s.Score,CreatedAt=s.CreatedAt})
             .ToArrayAsync();
+    }
     public static StandingRow[] Calculate(Contest contest,IEnumerable<SubmissionEntity> submissions){
         var rows=new List<StandingRow>();
         foreach(var user in submissions.Where(s=>s.ContestId==contest.Id).GroupBy(s=>s.UserId)){
