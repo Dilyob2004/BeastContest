@@ -223,6 +223,8 @@ try{
         var finished=Make(now.AddDays(-2));var draftContest=Make(null);var upcoming=Make(now.AddDays(1));var running=Make(now.AddMinutes(-5));
         Check(ParticipantAccess.Current([draftContest,finished])==finished&&ParticipantAccess.Open(ParticipantAccess.Current([draftContest,finished])),"An unannounced draft does not hide a finished contest from its participants.");
         Check(ParticipantAccess.Current([draftContest])==draftContest&&!ParticipantAccess.Open(draftContest)&&ParticipantAccess.Current([finished,upcoming,draftContest])==upcoming&&ParticipantAccess.Current([finished,upcoming,running])==running,"Running, scheduled, finished and draft contests keep their access priority.");
+    Check(RuntimeSignals.OutOfMemory("Java","Exception in thread \"main\" java.lang.OutOfMemoryError: Java heap space")&&RuntimeSignals.OutOfMemory("JavaScript","FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory")&&RuntimeSignals.OutOfMemory("C#","Unhandled exception. System.OutOfMemoryException: Exception of type")&&RuntimeSignals.OutOfMemory("Python","Traceback (most recent call last):\n  File \"main.py\", line 1\nMemoryError")&&RuntimeSignals.OutOfMemory("C++","terminate called after throwing an instance of 'std::bad_alloc'"),"Runtime out-of-memory errors are recognized in every language.");
+    Check(!RuntimeSignals.OutOfMemory("Python","ValueError: no MemoryError here")&&!RuntimeSignals.OutOfMemory("Java","java.lang.RuntimeException")&&!RuntimeSignals.OutOfMemory("Unknown","java.lang.OutOfMemoryError"),"Ordinary runtime errors stay RE.");
     }
     {
         var adminProblems=new ProblemStore(factory,adminActor);

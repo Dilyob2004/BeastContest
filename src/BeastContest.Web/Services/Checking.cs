@@ -110,6 +110,27 @@ public static class TestScoring
     }
 }
 
+/// <summary>
+/// Recognizes a program that failed because its runtime ran out of memory. Managed runtimes (Java, .NET,
+/// Node.js) hit their own heap limit before the container is OOM-killed and exit with an error instead.
+/// </summary>
+public static class RuntimeSignals
+{
+    private static readonly Regex PythonMemoryError = new(@"(?m)^MemoryError\b", RegexOptions.Compiled);
+
+    public static bool OutOfMemory(string language, string stderr) => language switch
+    {
+        "Java" => stderr.Contains("java.lang.OutOfMemoryError", StringComparison.Ordinal),
+        "C#" => stderr.Contains("System.OutOfMemoryException", StringComparison.Ordinal),
+        "JavaScript" => stderr.Contains("JavaScript heap out of memory", StringComparison.Ordinal) || stderr.Contains("Reached heap limit", StringComparison.Ordinal),
+        "Python" => PythonMemoryError.IsMatch(stderr),
+        "Go" => stderr.Contains("runtime: out of memory", StringComparison.Ordinal),
+        "Haskell" => stderr.Contains("Heap exhausted", StringComparison.Ordinal) || stderr.Contains("heap overflow", StringComparison.Ordinal),
+        "C++" => stderr.Contains("std::bad_alloc", StringComparison.Ordinal),
+        _ => false
+    };
+}
+
 public static class JudgeSnapshots
 {
     public static JudgeChecker Checker(ProblemEntity problem) =>

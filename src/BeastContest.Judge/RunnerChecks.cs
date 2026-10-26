@@ -41,7 +41,13 @@ internal static class RunnerChecks
             ("JavaScript","console.log(0)","WrongAnswer"),
             ("JavaScript","throw new Error('test')","RuntimeError"),
             ("JavaScript","while(true){}","TimeLimitExceeded"),
-            ("JavaScript","const = ;","RuntimeError")
+            ("JavaScript","const = ;","RuntimeError"),
+            // Runtime heap limits are reported as MLE in every language, not as RE.
+            ("Java","public class Main {public static void main(String[] a){long[][] keep=new long[1000][];for(int i=0;i<1000;i++)keep[i]=new long[1<<20];System.out.println(keep.length);}}","MemoryLimitExceeded"),
+            ("C#","var keep=new System.Collections.Generic.List<long[]>();while(true)keep.Add(new long[1<<20]);","MemoryLimitExceeded"),
+            ("JavaScript","const keep=[];while(true)keep.push(new Array(1<<20).fill(1.5));","MemoryLimitExceeded"),
+            ("Python","bytearray(1<<40)","MemoryLimitExceeded"),
+            ("C++","#include <vector>\nint main(){std::vector<char> v(1LL<<40);return v[0];}","MemoryLimitExceeded")
         ];
         foreach(var c in cases.Concat(additional).Where(c=>language is null||c.Language==language)){var result=await runner.JudgeAsync(c.Language,c.Source,problem,CancellationToken.None);if(result.Status!=c.Expected)throw new Exception($"{c.Language}: expected {c.Expected}, got {result.Status}: {result.Diagnostic}");Console.WriteLine($"PASS {c.Language}: {c.Expected}");}
         if(language is null||language=="Python")await CheckersAsync(runner);

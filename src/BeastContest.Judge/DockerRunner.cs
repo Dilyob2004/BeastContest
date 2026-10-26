@@ -116,7 +116,9 @@ public sealed class DockerRunner(string image)
             string[] command = ["timeout", "--signal=KILL", killAfter, .. profile.Run(problem.MemoryMb)];
             var run = await CommandAsync(["exec", "-i", "--user", "65534:65534", name, .. command], input, problem.TimeMs + 500, OutputLimitBytes, token);
             var oom = await EnsureContainerAsync(name, token);
-            var status = run.Overflow ? "OutputLimitExceeded" : oom ? "MemoryLimitExceeded" : run.TimedOut ? "TimeLimitExceeded" : run.Exit != 0 ? "RuntimeError" : "Accepted";
+            // Heap limits of managed runtimes surface as an error exit, not as a container OOM kill.
+            var outOfMemory = oom || (run.Exit != 0 && !run.TimedOut && RuntimeSignals.OutOfMemory(profile.Name, run.Error));
+            var status = run.Overflow ? "OutputLimitExceeded" : outOfMemory ? "MemoryLimitExceeded" : run.TimedOut ? "TimeLimitExceeded" : run.Exit != 0 ? "RuntimeError" : "Accepted";
             return new(status, run.Output);
         }
         finally { await RemoveAsync(name); }
